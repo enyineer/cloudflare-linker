@@ -1,0 +1,9 @@
+{
+  // Bun test files. Bun globals (`bun:test`) + DOM for future component tests.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["bun"]
+  },
+  "include": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+}

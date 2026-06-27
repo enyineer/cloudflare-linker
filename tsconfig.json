@@ -1,0 +1,11 @@
+{
+  // Solution file: editors and `tsc -b` resolve each target through these
+  // references. Typecheck all targets via `bun run typecheck`.
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.worker.json" },
+    { "path": "./tsconfig.node.json" },
+    { "path": "./tsconfig.test.json" }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  // Build/config tooling that Bun runs directly (vite.config.ts, drizzle.config.ts).
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "types": ["bun"]
+  },
+  "include": ["vite.config.ts", "drizzle.config.ts"]
+}

@@ -1,0 +1,56 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cloudflare-linker",
+  // The Worker is the single entry point. It runs first on every request
+  // (see assets.run_worker_first) so it can be hostname-aware: serve the admin
+  // SPA/API on the app's own host, and resolve redirects on any other host.
+  "main": "./src/worker/index.ts",
+  "compatibility_date": "2026-06-27",
+
+  "assets": {
+    // `directory` is intentionally OMITTED: @cloudflare/vite-plugin injects the
+    // client build output (dist/client) automatically.
+    "binding": "ASSETS",
+    // Unknown client routes fall back to index.html so the SPA router can handle them.
+    "not_found_handling": "single-page-application",
+    // true = the Worker handles EVERY request first (required so redirect
+    // hostnames can intercept arbitrary paths). The Worker must delegate
+    // non-API admin requests to env.ASSETS.fetch() itself.
+    "run_worker_first": true
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cloudflare-linker-db",
+      // Matches drizzle.config.ts `out`, so `wrangler d1 migrations apply` and
+      // `drizzle-kit generate` operate on the same .sql files.
+      "migrations_dir": "./drizzle"
+      // `database_id` is intentionally OMITTED so Cloudflare auto-provisions the
+      // D1 database on first `wrangler deploy` (requires Wrangler >= 4.45.0).
+      // Keep it omitted in the committed template; the id is written back locally
+      // after the first deploy. Local `vite dev` uses a local SQLite DB and needs no id.
+    }
+  ],
+
+  "vars": {
+    // The app's own admin hostname. Requests to this host (and to any
+    // *.workers.dev host or localhost) serve the admin SPA + API; every other
+    // host is treated as a redirect host looked up in the `domains` table.
+    // Leave blank to rely on the *.workers.dev / localhost detection.
+    "ADMIN_HOSTNAME": "",
+
+    // Cloudflare Access (admin auth). When BOTH are set, the Worker verifies the
+    // Cf-Access-Jwt-Assertion signature against the team's JWKS. When blank
+    // (e.g. local dev with no Access in front), the Worker falls back to the
+    // BOOTSTRAP_ADMIN_EMAIL identity. Set these as plain vars or in .dev.vars.
+    "TEAM_DOMAIN": "", // e.g. https://your-team.cloudflareaccess.com (no trailing slash)
+    "POLICY_AUD": "", // the Access application's Audience (AUD) tag
+
+    // This email becomes the first admin on first authenticated request, and is
+    // also the identity used in local dev when Access is not configured.
+    "BOOTSTRAP_ADMIN_EMAIL": ""
+  },
+
+  "observability": { "enabled": true }
+}

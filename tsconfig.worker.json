@@ -1,0 +1,12 @@
+{
+  // Cloudflare Worker (workerd runtime). No DOM, no Bun globals. Runtime types
+  // (Env, D1Database, Fetcher, ExportedHandler, ...) come from the generated
+  // worker-configuration.d.ts; vite/client provides import.meta.glob typings.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "types": ["vite/client"]
+  },
+  "include": ["src/worker", "src/db", "src/shared", "worker-configuration.d.ts"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
+}

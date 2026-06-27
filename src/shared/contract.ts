@@ -1,0 +1,269 @@
+import { oc } from "@orpc/contract";
+import { z } from "zod";
+import { EMAIL_RE, HOSTNAME_RE, PATH_RE, SLUG_RE, isHttpUrl, normalizePath } from "./format.ts";
+import { DOMAIN_KINDS, DOMAIN_STATUSES, REDIRECT_TYPES, USER_ROLES } from "./types.ts";
+
+/**
+ * oRPC contract: the single source of truth for the admin API. Imported by BOTH
+ * the Worker (which implements it) and the SPA (which is typed from it). Pure -
+ * no Env, no IO, no server deps - so it is safe in the client bundle.
+ */
+
+// ── reusable field schemas (input types stay client-friendly: string/number) ──
+
+const id = z.number().int().positive();
+
+const hostnameField = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(1, "Please enter a web address.")
+  .regex(HOSTNAME_RE, "That does not look like a valid web address (for example: go.example.com).");
+
+const pathField = z
+  .string()
+  .trim()
+  .min(1, 'Please enter a path, for example "/" or "/offer".')
+  .transform((v) => normalizePath(v))
+  .refine((v) => PATH_RE.test(v), "That path contains characters that are not allowed.");
+
+const targetUrlField = z
+  .string()
+  .trim()
+  .min(1, "Please enter where visitors should be sent.")
+  .refine(isHttpUrl, "Enter a full web address starting with http:// or https://.");
+
+const emailField = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(1, "Please enter an email address.")
+  .regex(EMAIL_RE, "That does not look like a valid email address.");
+
+const redirectTypeField = z.literal(REDIRECT_TYPES, "Choose a redirect type: 301, 302, 307, or 308.");
+
+const queryParamsField = z
+  .array(z.object({ key: z.string(), value: z.string() }), "Extra options must be a list of key/value pairs.")
+  .transform((arr) => arr.filter((p) => p.key.trim() !== "").map((p) => ({ key: p.key.trim(), value: p.value })));
+
+const campaignIdField = z.number({ error: "That campaign selection is not valid." }).int().positive();
+
+const enabledField = z.boolean({ error: "Use true or false for whether the link is on." });
+
+const fallbackUrlField = z
+  .string()
+  .trim()
+  .refine((v) => v === "" || isHttpUrl(v), "The fallback must be a full web address, or left blank.")
+  .transform((v) => (v === "" ? null : v))
+  .nullish();
+
+const optionalText = z
+  .string()
+  .trim()
+  .transform((v) => (v === "" ? null : v))
+  .nullish();
+
+const slugField = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(SLUG_RE, "The short label can only use lowercase letters, numbers, and dashes.");
+
+const roleField = z.enum(USER_ROLES, "Choose a role: admin, editor, or viewer.");
+
+// ── input schemas (exported so they can be unit-tested directly) ──────────────
+
+export const domainCreateSchema = z.object({
+  hostname: hostnameField,
+  kind: z.enum(DOMAIN_KINDS).default("subdomain"),
+});
+export const domainUpdateSchema = z.object({
+  id,
+  status: z.enum(["active", "disabled"], "Choose either active or disabled."),
+});
+
+export const linkCreateSchema = z.object({
+  domainId: z
+    .number({ error: "Please choose which web address this link belongs to." })
+    .int()
+    .positive("Please choose which web address this link belongs to."),
+  path: pathField,
+  targetUrl: targetUrlField,
+  redirectType: redirectTypeField.default(301),
+  queryParams: queryParamsField.default([]),
+  campaignId: campaignIdField.nullish(),
+  enabled: enabledField.default(true),
+  fallbackUrl: fallbackUrlField,
+  forwardQuery: z.boolean().default(false),
+});
+export const linkUpdateSchema = z.object({
+  id,
+  path: pathField.optional(),
+  targetUrl: targetUrlField.optional(),
+  redirectType: redirectTypeField.optional(),
+  queryParams: queryParamsField.optional(),
+  campaignId: campaignIdField.nullish(),
+  enabled: enabledField.optional(),
+  fallbackUrl: fallbackUrlField,
+  forwardQuery: z.boolean().optional(),
+});
+
+export const campaignCreateSchema = z.object({
+  name: z.string().trim().min(1, "Please give this campaign a name."),
+  slug: slugField.optional(),
+  utmSource: optionalText,
+  utmMedium: optionalText,
+  utmCampaign: optionalText,
+  notes: optionalText,
+});
+export const campaignUpdateSchema = z.object({
+  id,
+  name: z.string().trim().min(1, "Please give this campaign a name.").optional(),
+  slug: slugField.optional(),
+  utmSource: optionalText,
+  utmMedium: optionalText,
+  utmCampaign: optionalText,
+  notes: optionalText,
+});
+
+export const userCreateSchema = z.object({ email: emailField, role: roleField });
+export const userUpdateSchema = z.object({ email: emailField, role: roleField });
+export const linkListSchema = z.object({ domainId: id.optional(), campaignId: id.optional() });
+
+// ── output DTO schemas + inferred types ───────────────────────────────────────
+
+const DomainDtoSchema = z.object({
+  id: z.number(),
+  hostname: z.string(),
+  kind: z.enum(DOMAIN_KINDS),
+  status: z.enum(DOMAIN_STATUSES),
+  createdAt: z.string(),
+});
+const LinkDtoSchema = z.object({
+  id: z.number(),
+  domainId: z.number(),
+  path: z.string(),
+  targetUrl: z.string(),
+  redirectType: z.literal(REDIRECT_TYPES),
+  queryParams: z.array(z.object({ key: z.string(), value: z.string() })),
+  campaignId: z.number().nullable(),
+  enabled: z.boolean(),
+  fallbackUrl: z.string().nullable(),
+  forwardQuery: z.boolean(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+const CampaignDtoSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  slug: z.string(),
+  utmSource: z.string().nullable(),
+  utmMedium: z.string().nullable(),
+  utmCampaign: z.string().nullable(),
+  notes: z.string().nullable(),
+  createdAt: z.string(),
+});
+const UserDtoSchema = z.object({ email: z.string(), role: z.enum(USER_ROLES), createdAt: z.string() });
+const MeDtoSchema = z.object({ email: z.string(), role: z.enum(USER_ROLES) });
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const dateField = z.string().regex(DATE_RE, "Use a date like 2026-01-31.").optional();
+
+// Reusable analytics building blocks: a time series and a generic ranked breakdown.
+const rangeSchema = z.object({ from: z.string(), to: z.string() });
+const seriesSchema = z.array(z.object({ date: z.string(), clicks: z.number() }));
+const breakdownSchema = z.array(z.object({ label: z.string(), clicks: z.number() }));
+
+export const overviewInputSchema = z.object({ from: dateField, to: dateField });
+export const statsInputSchema = z.object({ id, from: dateField, to: dateField });
+
+const OverviewDtoSchema = z.object({
+  range: rangeSchema,
+  totalClicks: z.number(),
+  previousClicks: z.number(),
+  overTime: seriesSchema,
+  byCampaign: breakdownSchema,
+  topLinks: breakdownSchema,
+  topCountries: breakdownSchema,
+  topSources: breakdownSchema,
+  byDevice: breakdownSchema,
+  topReferrers: breakdownSchema,
+});
+const LinkStatsDtoSchema = z.object({
+  range: rangeSchema,
+  totalClicks: z.number(),
+  previousClicks: z.number(),
+  overTime: seriesSchema,
+  topCountries: breakdownSchema,
+  topSources: breakdownSchema,
+  byDevice: breakdownSchema,
+  byBrowser: breakdownSchema,
+  topReferrers: breakdownSchema,
+});
+const CampaignStatsDtoSchema = z.object({
+  range: rangeSchema,
+  totalClicks: z.number(),
+  previousClicks: z.number(),
+  overTime: seriesSchema,
+  byLink: breakdownSchema,
+  topSources: breakdownSchema,
+  topCountries: breakdownSchema,
+  byDevice: breakdownSchema,
+});
+const DomainStatsDtoSchema = z.object({
+  range: rangeSchema,
+  totalClicks: z.number(),
+  previousClicks: z.number(),
+  overTime: seriesSchema,
+  byLink: breakdownSchema,
+  topSources: breakdownSchema,
+  topCountries: breakdownSchema,
+  byDevice: breakdownSchema,
+});
+
+export type DomainDto = z.infer<typeof DomainDtoSchema>;
+export type LinkDto = z.infer<typeof LinkDtoSchema>;
+export type CampaignDto = z.infer<typeof CampaignDtoSchema>;
+export type UserDto = z.infer<typeof UserDtoSchema>;
+export type MeDto = z.infer<typeof MeDtoSchema>;
+export type OverviewDto = z.infer<typeof OverviewDtoSchema>;
+export type LinkStatsDto = z.infer<typeof LinkStatsDtoSchema>;
+export type CampaignStatsDto = z.infer<typeof CampaignStatsDtoSchema>;
+export type DomainStatsDto = z.infer<typeof DomainStatsDtoSchema>;
+export type Breakdown = z.infer<typeof breakdownSchema>;
+
+// ── contract router ───────────────────────────────────────────────────────────
+
+export const contract = {
+  me: oc.output(MeDtoSchema),
+  domains: {
+    list: oc.output(z.array(DomainDtoSchema)),
+    create: oc.input(domainCreateSchema).output(DomainDtoSchema),
+    update: oc.input(domainUpdateSchema).output(DomainDtoSchema),
+    delete: oc.input(z.object({ id })).output(z.void()),
+  },
+  links: {
+    list: oc.input(linkListSchema).output(z.array(LinkDtoSchema)),
+    create: oc.input(linkCreateSchema).output(LinkDtoSchema),
+    update: oc.input(linkUpdateSchema).output(LinkDtoSchema),
+    delete: oc.input(z.object({ id })).output(z.void()),
+  },
+  campaigns: {
+    list: oc.output(z.array(CampaignDtoSchema)),
+    create: oc.input(campaignCreateSchema).output(CampaignDtoSchema),
+    update: oc.input(campaignUpdateSchema).output(CampaignDtoSchema),
+    delete: oc.input(z.object({ id })).output(z.void()),
+  },
+  users: {
+    list: oc.output(z.array(UserDtoSchema)),
+    create: oc.input(userCreateSchema).output(UserDtoSchema),
+    update: oc.input(userUpdateSchema).output(UserDtoSchema),
+    delete: oc.input(z.object({ email: emailField })).output(z.void()),
+  },
+  analytics: {
+    overview: oc.input(overviewInputSchema).output(OverviewDtoSchema),
+    link: oc.input(statsInputSchema).output(LinkStatsDtoSchema),
+    campaign: oc.input(statsInputSchema).output(CampaignStatsDtoSchema),
+    domain: oc.input(statsInputSchema).output(DomainStatsDtoSchema),
+  },
+};
