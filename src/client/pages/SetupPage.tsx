@@ -10,6 +10,7 @@ import { Field } from "../components/Field.tsx";
 import { Input } from "../components/controls.tsx";
 import { EmptyState } from "../components/EmptyState.tsx";
 import { ErrorBanner, LoadingScreen } from "../components/Feedback.tsx";
+import { SetupConfirmDialog } from "../components/SetupConfirmDialog.tsx";
 import { useToast } from "../components/Toast.tsx";
 import { toMessage } from "../lib/errors.ts";
 import { useMe } from "../lib/me.tsx";
@@ -43,19 +44,7 @@ export function SetupPage() {
     }),
   );
 
-  const enable = useMutation(
-    orpc.setup.setupHostname.mutationOptions({
-      onSuccess: async (res) => {
-        if (res.ok) {
-          await invalidate(orpc.setup.key());
-          notify(res.message);
-        } else {
-          notify(res.message, "error");
-        }
-      },
-      onError: (err) => notify(toMessage(err), "error"),
-    }),
-  );
+  const [setupHost, setSetupHost] = useState<string | null>(null);
 
   if (!isAdmin) {
     return (
@@ -125,7 +114,6 @@ export function SetupPage() {
                 <div className="rows">
                   {diag.data.routing.zones.map((z) => {
                     const hostname = `*.${z.zone}`;
-                    const busy = enable.isPending && enable.variables?.hostname === hostname;
                     return (
                       <div className="row" key={z.id}>
                         <div className="row__main">
@@ -137,13 +125,8 @@ export function SetupPage() {
                         {z.ok ? (
                           <Badge tone="ok">On</Badge>
                         ) : (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            disabled={enable.isPending}
-                            onClick={() => enable.mutate({ hostname })}
-                          >
-                            {busy ? "Setting up..." : "Catch all subdomains"}
+                          <Button variant="ghost" size="sm" onClick={() => setSetupHost(hostname)}>
+                            Catch all subdomains
                           </Button>
                         )}
                       </div>
@@ -190,6 +173,7 @@ export function SetupPage() {
           )}
         </>
       )}
+      {setupHost !== null && <SetupConfirmDialog hostname={setupHost} onClose={() => setSetupHost(null)} />}
     </div>
   );
 }

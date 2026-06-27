@@ -296,7 +296,9 @@ function LinkModal({
     else create.mutate({ domainId, ...shared });
   };
 
-  const selectedHost = domains.find((d) => d.id === domainId)?.hostname ?? "";
+  const selectedDomain = domains.find((d) => d.id === domainId);
+  const selectedHost = selectedDomain?.hostname ?? "";
+  const willAddRoute = selectedDomain?.routingMode === "paths";
 
   return (
     <Modal
@@ -341,6 +343,13 @@ function LinkModal({
         <Field label="Path" htmlFor="path" hint='The part after the web address. Use "/" for the main link.' error={errors.fields.path}>
           <Input id="path" value={path} invalid={Boolean(errors.fields.path)} placeholder="/offer" onChange={(e) => setPath(e.target.value)} />
         </Field>
+
+        {willAddRoute && (
+          <p className="field__hint">
+            {selectedHost} already has a website, so saving adds a Cloudflare route for just this path - the rest of the
+            site stays untouched.
+          </p>
+        )}
 
         <Field
           label="Send visitor to"

@@ -20,7 +20,7 @@ What the button does:
 2. **Auto-provisions the D1 database** - `wrangler.jsonc` deliberately omits `database_id`, so Cloudflare creates it for you (requires Wrangler 4.45+, which this project pins).
 3. Deploys the Worker, which serves both the admin app and the redirects.
 
-After the first deploy you still need two things: **configure Cloudflare Access** (so only you can reach the admin) and **set a few variables**. Both are below. Database migrations apply themselves on the first request, so you never run a migration command.
+After the first deploy you just **set your admin email** (and optionally a starting password); the app handles sign-in itself - no Cloudflare Access, no credit card. Database migrations apply themselves on the first request, so you never run a migration command.
 
 Prefer the CLI? `bun install && bun run deploy`.
 
@@ -32,14 +32,11 @@ These are plain environment variables (not secrets). Set them in the Cloudflare 
 
 | Variable | Required | What it is |
 | --- | --- | --- |
-| `BOOTSTRAP_ADMIN_EMAIL` | Yes | The email that becomes the first **admin** on first sign-in. Also the identity used in local dev. |
-| `TEAM_DOMAIN` | Yes (production) | Your Cloudflare Access team URL, e.g. `https://your-team.cloudflareaccess.com` (no trailing slash). |
-| `POLICY_AUD` | Yes (production) | The Access application's **Application Audience (AUD) Tag**. |
+| `BOOTSTRAP_ADMIN_EMAIL` | Optional | The email of the first **admin**. If left blank, the one-time setup screen asks for it on first run. |
+| `BOOTSTRAP_ADMIN_PASSWORD` | Secret (optional) | An initial admin password set at deploy. If set, your first sign-in uses it (then it's stored hashed). If unset, the app shows a one-time "create admin password" screen for `BOOTSTRAP_ADMIN_EMAIL`. |
 | `ADMIN_HOSTNAME` | Optional | The admin app's hostname. Leave blank to auto-detect `*.workers.dev` and `localhost`. Set it if you serve the admin on a custom domain. |
 
-**Security note:** if `TEAM_DOMAIN` + `POLICY_AUD` are not set, a **deployed** (non-localhost) admin returns `401` and cannot be used. Cloudflare Access is required in production. The `BOOTSTRAP_ADMIN_EMAIL`-only fallback works for `localhost` development only.
-
-No secrets are required for the core app.
+See [Admin sign-in](#admin-sign-in) below for how the first admin is created and how passwords are recovered.
 
 ### Optional: Cloudflare connection (Setup page)
 
@@ -62,16 +59,21 @@ There is nothing required - pasting a token is enough. The remaining knobs are a
 
 ---
 
-## Cloudflare Access setup (admin sign-in)
+## Admin sign-in
 
-The Worker verifies the Access JWT server-side (signature against your team's JWKS, `iss`/`aud`/`exp`, RS256 pinned), so the admin is protected even though redirects stay public.
+Sign-in is built in: email + password (passkeys can be added too), handled by the Worker. Passwords are hashed with scrypt (`node:crypto`) and stored in D1; sessions are signed cookies (`jose` HS256) whose key lives in KV. The admin is protected while redirects stay public. No Cloudflare Access, no credit card.
 
-1. Open the **Cloudflare Zero Trust** dashboard -> **Access** -> **Applications** -> **Add an application** -> **Self-hosted**.
-2. **Application domain**: your admin hostname (the Worker's `*.workers.dev` URL, or your custom admin domain).
-3. Add a **policy** that allows the people who should have access (for example, "Emails ending in @your-company.com", or specific addresses).
-4. Save. Open the application's **Configure -> Additional settings** and copy the **Application Audience (AUD) Tag** -> set as `POLICY_AUD`.
-5. Your team domain is `https://<your-team-name>.cloudflareaccess.com` -> set as `TEAM_DOMAIN`.
-6. Set `BOOTSTRAP_ADMIN_EMAIL` to your own email. Sign in once - you become the first admin and can then add others under **Team** (admin -> editor -> viewer).
+**First admin (one of two ways):**
+- Set a `BOOTSTRAP_ADMIN_PASSWORD` secret at deploy -> sign in with `BOOTSTRAP_ADMIN_EMAIL` + that password (most secure; it's then hashed into D1).
+- Or leave it unset -> the app shows a one-time "create admin account" screen. If `BOOTSTRAP_ADMIN_EMAIL` is set it uses that; if not, you enter the admin email there too. Do this right after deploying.
+
+**Adding people:** on the **Team** page an admin adds someone by email and gets a one-time temporary password to hand over; they sign in and change it under **Account**. Roles are admin -> editor -> viewer.
+
+**Forgot a password (no email is sent):**
+1. Another admin resets it on the **Team** page (one-time temporary password).
+2. (Coming with passkeys) sign in with a passkey, then change the password.
+3. Last resort: the account owner clears the hash in Cloudflare's D1 console -
+   `UPDATE users SET password_hash = NULL WHERE email = 'you@example.com';` - which re-shows the "create admin password" screen.
 
 Roles: **admin** (everything + team management), **editor** (manage links + campaigns), **viewer** (read-only).
 
@@ -111,7 +113,7 @@ bun run db:seed               # optional: demo subdomain, campaign, links, and s
 bun run dev                   # http://localhost:5173
 ```
 
-In dev there is no Cloudflare Access, so the app signs you in as `BOOTSTRAP_ADMIN_EMAIL` (admin). To exercise a redirect locally, send a `Host` header:
+On first run the app shows a "create admin password" screen for `BOOTSTRAP_ADMIN_EMAIL`; after that you sign in with email + password. To exercise a redirect locally, send a `Host` header:
 
 ```bash
 curl -i -H "Host: demo.example.com" --max-redirs 0 http://localhost:5173/promo
@@ -137,7 +139,7 @@ curl -i -H "Host: demo.example.com" --max-redirs 0 http://localhost:5173/promo
 
 A single Worker runs first on every request (`assets.run_worker_first`) and is hostname-aware:
 
-- **Admin host** (`ADMIN_HOSTNAME` / `*.workers.dev` / `localhost`): `/api/*` is the oRPC API (behind Access); everything else serves the React SPA.
+- **Admin host** (`ADMIN_HOSTNAME` / `*.workers.dev` / `localhost`): `/api/*` is the oRPC API (behind the session login); everything else serves the React SPA.
 - **Any other host**: looked up as a redirect host in D1. On a match it returns the redirect and logs one anonymous click via `ctx.waitUntil` (non-blocking); otherwise a clean 404.
 
 ### Migrations
@@ -159,7 +161,7 @@ This keeps the data set low-risk, but it does not by itself make you compliant. 
 
 ## Tech stack
 
-Bun, React 19 + Wouter, Vite + `@cloudflare/vite-plugin`, Cloudflare Workers + D1, Drizzle ORM (+ drizzle-kit), oRPC (contract-first, end-to-end typed), zod, Radix UI, Recharts, and `jose` for Access JWT verification.
+Bun, React 19 + Wouter, Vite + `@cloudflare/vite-plugin`, Cloudflare Workers + D1 + KV, Drizzle ORM (+ drizzle-kit), oRPC (contract-first, end-to-end typed), zod, Radix UI, Recharts, `jose` for session cookies, and `node:crypto` scrypt for password hashing.
 
 A few decisions worth knowing:
 

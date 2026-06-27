@@ -15,10 +15,17 @@ const ToastContext = createContext<ToastApi | null>(null);
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
+  const dismiss = useCallback((id: number) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
   const notify = useCallback((message: string, tone: Tone = "success") => {
     const id = Date.now() + Math.random();
     setToasts((prev) => [...prev, { id, message, tone }]);
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
+    // Errors stay until dismissed (so they can be read + copied); successes auto-hide.
+    if (tone !== "error") {
+      setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500);
+    }
   }, []);
 
   return (
@@ -26,12 +33,40 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       {children}
       <div className="toasts">
         {toasts.map((t) => (
-          <div key={t.id} className={`toast toast--${t.tone}`} role="status">
-            {t.message}
-          </div>
+          <Toast key={t.id} item={t} onDismiss={() => dismiss(t.id)} />
         ))}
       </div>
     </ToastContext.Provider>
+  );
+}
+
+function Toast({ item, onDismiss }: { item: ToastItem; onDismiss: () => void }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(item.message);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable (insecure context) - leave the text for manual copy */
+    }
+  };
+
+  return (
+    <div className={`toast toast--${item.tone}`} role={item.tone === "error" ? "alert" : "status"}>
+      <span className="toast__msg">{item.message}</span>
+      <div className="toast__actions">
+        {item.tone === "error" && (
+          <button type="button" className="toast__btn" onClick={copy}>
+            {copied ? "Copied" : "Copy"}
+          </button>
+        )}
+        <button type="button" className="toast__btn toast__close" onClick={onDismiss} aria-label="Dismiss">
+          ✕
+        </button>
+      </div>
+    </div>
   );
 }
 

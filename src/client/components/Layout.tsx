@@ -1,8 +1,11 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { can } from "../../shared/roles.ts";
+import { authApi } from "../lib/authApi.ts";
 import { useMe } from "../lib/me.tsx";
+import { orpc, queryClient } from "../orpc.ts";
 import { Badge } from "./Badge.tsx";
+import { Button } from "./Button.tsx";
 
 const NAV = [
   { href: "/", label: "Home" },
@@ -41,8 +44,19 @@ export function Layout({ children }: { children: ReactNode }) {
           ))}
         </nav>
         <div className="user-chip">
-          <Badge tone="accent">{me.role}</Badge>
-          <span className="muted">{me.email}</span>
+          <Link href="/account" className="user-chip__id" title="Account">
+            <Badge tone="accent">{me.role}</Badge>
+            <span className="muted">{me.email}</span>
+          </Link>
+          <Button
+            size="sm"
+            onClick={async () => {
+              await authApi.logout();
+              queryClient.invalidateQueries({ queryKey: orpc.me.key() });
+            }}
+          >
+            Sign out
+          </Button>
         </div>
       </header>
       <main className="main">{children}</main>

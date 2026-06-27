@@ -1,5 +1,18 @@
 import { describe, expect, test } from "bun:test";
-import { cloudflareTokenUrl, MANAGE_TOKEN_PERMS } from "./cloudflare-link.ts";
+import { cloudflareTokenUrl, MANAGE_TOKEN_PERMS, registrableDomain } from "./cloudflare-link.ts";
+
+describe("registrableDomain", () => {
+  test("returns the apex for subdomains and apex inputs", () => {
+    expect(registrableDomain("example.com")).toBe("example.com");
+    expect(registrableDomain("go.example.com")).toBe("example.com");
+    expect(registrableDomain("a.b.example.com")).toBe("example.com");
+    expect(registrableDomain("*.example.com")).toBe("example.com");
+  });
+  test("handles multi-part country TLDs", () => {
+    expect(registrableDomain("go.example.co.uk")).toBe("example.co.uk");
+    expect(registrableDomain("example.co.uk")).toBe("example.co.uk");
+  });
+});
 
 describe("cloudflareTokenUrl", () => {
   const url = cloudflareTokenUrl(MANAGE_TOKEN_PERMS, "Cloudflare Linker");

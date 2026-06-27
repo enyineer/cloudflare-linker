@@ -141,11 +141,29 @@ export const secrets = sqliteTable("secrets", {
 });
 
 // ── users ────────────────────────────────────────────────────────────────────
-// Identity comes from Cloudflare Access (verified email); this maps email -> role.
-// BOOTSTRAP_ADMIN_EMAIL is upserted as the first admin on first authed request.
+// Admin accounts: email -> role, plus a self-hosted password (scrypt hash) and
+// optional passkeys (see `passkeys`). BOOTSTRAP_ADMIN_EMAIL is the first admin.
 export const users = sqliteTable("users", {
   email: text("email").primaryKey(),
   role: text("role", { enum: USER_ROLES }).notNull().default("viewer"),
+  // scrypt hash ("scrypt$N$r$p$salt$hash"); null until the user sets a password.
+  passwordHash: text("password_hash"),
+  passwordSetAt: integer("password_set_at", { mode: "timestamp" }),
+  createdAt: createdAt(),
+});
+
+// ── passkeys ───────────────────────────────────────────────────────────────────
+// WebAuthn credentials (an additional login method). Stores only the public key
+// + counter; no biometric data ever leaves the device.
+export const passkeys = sqliteTable("passkeys", {
+  id: text("id").primaryKey(), // base64url credential id
+  userEmail: text("user_email")
+    .notNull()
+    .references(() => users.email, { onDelete: "cascade" }),
+  publicKey: text("public_key").notNull(), // base64url COSE public key
+  counter: integer("counter").notNull().default(0),
+  transports: text("transports"), // JSON array, optional
+  label: text("label"),
   createdAt: createdAt(),
 });
 
@@ -160,3 +178,5 @@ export type Click = typeof clicks.$inferSelect;
 export type NewClick = typeof clicks.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+export type Passkey = typeof passkeys.$inferSelect;
+export type NewPasskey = typeof passkeys.$inferInsert;

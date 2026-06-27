@@ -34,6 +34,8 @@ export function TeamPage() {
   const users = useQuery(orpc.users.list.queryOptions({ enabled: can(me.role, "manageUsers") }));
   const [adding, setAdding] = useState(false);
   const [confirmEmail, setConfirmEmail] = useState<string | null>(null);
+  // A one-time temporary password to hand to a person (after add or reset).
+  const [credential, setCredential] = useState<{ email: string; password: string } | null>(null);
 
   if (!can(me.role, "manageUsers")) {
     return (
@@ -59,6 +61,12 @@ export function TeamPage() {
         notify("Team member removed.");
         setConfirmEmail(null);
       },
+      onError: (err) => notify(toMessage(err), "error"),
+    }),
+  );
+  const reset = useMutation(
+    orpc.users.resetPassword.mutationOptions({
+      onSuccess: (res, vars) => setCredential({ email: vars.email, password: res.tempPassword }),
       onError: (err) => notify(toMessage(err), "error"),
     }),
   );
@@ -108,6 +116,15 @@ export function TeamPage() {
                     />
                   </div>
                   <div className="row__actions">
+                    {!isSelf && (
+                      <Button
+                        size="sm"
+                        disabled={reset.isPending && reset.variables?.email === u.email}
+                        onClick={() => reset.mutate({ email: u.email })}
+                      >
+                        {reset.isPending && reset.variables?.email === u.email ? "..." : "Reset password"}
+                      </Button>
+                    )}
                     <Button size="sm" variant="danger" disabled={isSelf} onClick={() => setConfirmEmail(u.email)}>
                       Remove
                     </Button>
@@ -119,7 +136,12 @@ export function TeamPage() {
         </div>
       )}
 
-      {adding && <AddUserModal onClose={() => setAdding(false)} />}
+      {adding && (
+        <AddUserModal onClose={() => setAdding(false)} onCreated={(email, password) => setCredential({ email, password })} />
+      )}
+      {credential && (
+        <CredentialModal email={credential.email} password={credential.password} onClose={() => setCredential(null)} />
+      )}
       {confirmEmail !== null && (
         <ConfirmDialog
           title="Remove this person?"
@@ -134,19 +156,18 @@ export function TeamPage() {
   );
 }
 
-function AddUserModal({ onClose }: { onClose: () => void }) {
+function AddUserModal({ onClose, onCreated }: { onClose: () => void; onCreated: (email: string, password: string) => void }) {
   const invalidate = useInvalidate();
-  const { notify } = useToast();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>("viewer");
   const [errors, setErrors] = useState<FormErrors>(NO_ERRORS);
 
   const create = useMutation(
     orpc.users.create.mutationOptions({
-      onSuccess: async () => {
+      onSuccess: async (res) => {
         await invalidate(orpc.users.key());
-        notify("Team member added.");
         onClose();
+        onCreated(res.email, res.tempPassword);
       },
       onError: (err) => setErrors(toFormErrors(err)),
     }),
@@ -183,6 +204,42 @@ function AddUserModal({ onClose }: { onClose: () => void }) {
         </Field>
         <button type="submit" hidden />
       </form>
+    </Modal>
+  );
+}
+
+function CredentialModal({ email, password, onClose }: { email: string; password: string; onClose: () => void }) {
+  const { notify } = useToast();
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(password);
+      notify("Copied.");
+    } catch {
+      notify("Could not copy. Select the password and copy it manually.", "error");
+    }
+  };
+  return (
+    <Modal
+      title="Temporary password"
+      onClose={onClose}
+      footer={
+        <Button variant="primary" onClick={onClose}>
+          Done
+        </Button>
+      }
+    >
+      <div className="stack">
+        <p className="muted">
+          Share this one-time password with <strong>{email}</strong>. They sign in with their email and this password,
+          then set their own. It is shown only once.
+        </p>
+        <div className="credential">
+          <code className="credential__value mono">{password}</code>
+          <Button size="sm" onClick={copy}>
+            Copy
+          </Button>
+        </div>
+      </div>
     </Modal>
   );
 }

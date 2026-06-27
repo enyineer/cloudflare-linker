@@ -6,6 +6,8 @@
   // SPA/API on the app's own host, and resolve redirects on any other host.
   "main": "./src/worker/index.ts",
   "compatibility_date": "2026-06-27",
+  // node:crypto (scrypt) is used to hash admin passwords.
+  "compatibility_flags": ["nodejs_compat"],
 
   "assets": {
     // `directory` is intentionally OMITTED: @cloudflare/vite-plugin injects the
@@ -40,15 +42,10 @@
     // Leave blank to rely on the *.workers.dev / localhost detection.
     "ADMIN_HOSTNAME": "",
 
-    // Cloudflare Access (admin auth). When BOTH are set, the Worker verifies the
-    // Cf-Access-Jwt-Assertion signature against the team's JWKS. When blank
-    // (e.g. local dev with no Access in front), the Worker falls back to the
-    // BOOTSTRAP_ADMIN_EMAIL identity. Set these as plain vars or in .dev.vars.
-    "TEAM_DOMAIN": "", // e.g. https://your-team.cloudflareaccess.com (no trailing slash)
-    "POLICY_AUD": "", // the Access application's Audience (AUD) tag
-
-    // This email becomes the first admin on first authenticated request, and is
-    // also the identity used in local dev when Access is not configured.
+    // Admin sign-in is a self-hosted email + password (with optional passkeys).
+    // Optional: pre-set the first administrator's email. If left blank, the
+    // one-time "create admin account" screen on first run asks for the email too.
+    // A BOOTSTRAP_ADMIN_PASSWORD secret (if set) makes first login use it.
     "BOOTSTRAP_ADMIN_EMAIL": "",
 
     // Optional Cloudflare API integration (Setup page diagnostics + custom-domain

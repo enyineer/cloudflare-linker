@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "../db/client.ts";
 import { domains, links } from "../db/schema.ts";
-import type { CfDiagnosticsDto, EnableResultDto } from "../shared/contract.ts";
+import type { CfDiagnosticsDto, EnableResultDto, SetupPlanDto } from "../shared/contract.ts";
 import {
   analyzeCustomDomain,
   analyzeRoutes,
@@ -342,6 +342,77 @@ function routeErrorMessage(detail?: string): string {
     return "This app's Worker is not deployed on your Cloudflare account yet, so a web route cannot point to it. Deploy the app first, then set this up. (Running it locally? Routing only works once the app is deployed.)";
   }
   return `Could not create the route${detail ? `: ${detail}` : ""}. Please try again.`;
+}
+
+/** Read-only: compute exactly what setupHostname would change, for confirmation.
+ *  Makes no changes. */
+export async function previewHostname(env: Env, hostname: string): Promise<SetupPlanDto> {
+  const plan = (extra: Partial<SetupPlanDto>): SetupPlanDto => ({
+    ok: true,
+    code: "ok",
+    hostname,
+    mode: null,
+    alreadyDone: false,
+    steps: [],
+    warning: "",
+    message: "",
+    ...extra,
+  });
+  const fail = (code: SetupPlanDto["code"], message: string): SetupPlanDto => plan({ ok: false, code, message });
+
+  const { token } = await resolveToken(env);
+  if (!token) return fail("no_token", "Connect Cloudflare first, then try again.");
+  const account = await resolveAccount(env, token);
+  if (!account.id) return fail("zone_not_found", account.message || "Could not determine your Cloudflare account.");
+  const zones = await fetchAccountZones(token, account.id);
+  const zone = zoneForHostname(hostname, zones);
+  if (!zone) return fail("zone_not_found", `We could not find a Cloudflare domain for ${hostname}. Add its zone to this account first.`);
+  if (zone.status !== "active") return fail("zone_inactive", `${zone.name} is not active on Cloudflare yet.`);
+
+  let routes: CfRoute[];
+  try {
+    routes = (await cfGet<CfRoute[]>(token, `/zones/${zone.id}/workers/routes`)).result ?? [];
+  } catch {
+    return fail("api_error", "Could not reach Cloudflare just now. Please try again in a moment.");
+  }
+  const workerName = workerNameOf(env);
+
+  const own = findRouteByPattern(routes, hostnameRoutePattern(hostname));
+  if (own) {
+    if (own.script !== workerName) return fail("route_conflict", `Another app already handles ${hostname}.`);
+    return plan({ mode: "whole", alreadyDone: true, message: `${hostname} is already set up - nothing to change.` });
+  }
+  if (!isApexHost(hostname, zone.name) && !isWildcardHost(hostname)) {
+    const wildcard = findSubdomainRoute(routes, zone.name);
+    if (wildcard?.script === workerName) {
+      return plan({ mode: "whole", alreadyDone: true, message: `${hostname} already works through your ${zone.name} subdomain setup - nothing to change.` });
+    }
+  }
+
+  if (await hasExistingSite(token, zone.id, hostname)) {
+    const paths = await linkPathsFor(env, hostname);
+    const text =
+      paths.length > 0
+        ? `Add a web route for each of your ${paths.length} link${paths.length === 1 ? "" : "s"} on ${hostname}`
+        : `Add a web route for each link you create on ${hostname}`;
+    return plan({
+      mode: "paths",
+      steps: [{ icon: "route", text }],
+      message: `${hostname} already has a website, so we'll only set up your specific link paths - the rest of ${hostname} stays untouched.`,
+    });
+  }
+
+  return plan({
+    mode: "whole",
+    warning: isWildcardHost(hostname)
+      ? `This sends ALL subdomains of ${zone.name} - including existing ones like www or mail - to this app.`
+      : "",
+    steps: [
+      { icon: "dns", text: `Point ${hostname} at Cloudflare (a proxied DNS entry)` },
+      { icon: "route", text: `Send ${hostname} traffic to this app` },
+    ],
+    message: isWildcardHost(hostname) ? `Catch every subdomain of ${zone.name} for your links.` : "",
+  });
 }
 
 /** Wire a single hostname to this Worker. Picks the strategy automatically:

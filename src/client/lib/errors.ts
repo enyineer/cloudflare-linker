@@ -34,6 +34,11 @@ function extractFieldErrors(data: unknown): Record<string, string> {
   return fields;
 }
 
+/** The oRPC error code (e.g. "UNAUTHORIZED", "FORBIDDEN"), or null. */
+export function errorCode(err: unknown): string | null {
+  return err instanceof ORPCError ? err.code : null;
+}
+
 /** A single human-readable message for toasts/banners. */
 export function toMessage(err: unknown): string {
   const { message, fields } = toFormErrors(err);

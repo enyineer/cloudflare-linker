@@ -5,7 +5,8 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ESNext"],
-    "types": ["vite/client"]
+    // `node` for node:crypto (scrypt) used by password hashing under nodejs_compat.
+    "types": ["vite/client", "node"]
   },
   "include": ["src/worker", "src/db", "src/shared", "worker-configuration.d.ts"],
   "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]

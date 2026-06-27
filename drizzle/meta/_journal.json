@@ -36,6 +36,13 @@
       "when": 1782593854915,
       "tag": "0004_strange_hobgoblin",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1782597613494,
+      "tag": "0005_silky_scorpion",
+      "breakpoints": true
     }
   ]
 }

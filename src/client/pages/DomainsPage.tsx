@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "wouter";
-import type { DomainKind, RoutingMode } from "../../shared/types.ts";
+import type { RoutingMode } from "../../shared/types.ts";
 import { can } from "../../shared/roles.ts";
 import { Badge } from "../components/Badge.tsx";
 import { Button } from "../components/Button.tsx";
@@ -11,7 +11,7 @@ import { ErrorBanner, LoadingScreen } from "../components/Feedback.tsx";
 import { Field } from "../components/Field.tsx";
 import { Input } from "../components/controls.tsx";
 import { Modal } from "../components/Modal.tsx";
-import { Select } from "../components/Select.tsx";
+import { SetupConfirmDialog } from "../components/SetupConfirmDialog.tsx";
 import { useToast } from "../components/Toast.tsx";
 import { toFormErrors, toMessage, type FormErrors } from "../lib/errors.ts";
 import { useMe } from "../lib/me.tsx";
@@ -48,20 +48,9 @@ export function DomainsPage() {
     }),
   );
 
-  // Set up (or re-check) a web address on Cloudflare. Used on add and per-row.
-  const setup = useMutation(
-    orpc.setup.setupHostname.mutationOptions({
-      onSuccess: async (res) => {
-        if (res.ok) {
-          await invalidate(orpc.domains.key());
-          notify(res.message);
-        } else {
-          notify(res.message, "error");
-        }
-      },
-      onError: (err) => notify(toMessage(err), "error"),
-    }),
-  );
+  // Set up (or re-check) a web address on Cloudflare - opens a confirm dialog
+  // that previews the change before anything happens.
+  const [setupHost, setSetupHost] = useState<string | null>(null);
 
   return (
     <div className="stack">
@@ -115,14 +104,9 @@ export function DomainsPage() {
                     <Button
                       size="sm"
                       variant={d.routingMode === "none" ? "primary" : "ghost"}
-                      disabled={setup.isPending && setup.variables?.hostname === d.hostname}
-                      onClick={() => setup.mutate({ hostname: d.hostname })}
+                      onClick={() => setSetupHost(d.hostname)}
                     >
-                      {setup.isPending && setup.variables?.hostname === d.hostname
-                        ? "Working..."
-                        : d.routingMode === "none"
-                          ? "Set up"
-                          : "Re-check"}
+                      {d.routingMode === "none" ? "Set up" : "Re-check"}
                     </Button>
                     {d.status !== "pending" && (
                       <Button
@@ -148,10 +132,11 @@ export function DomainsPage() {
         <AddDomainModal
           onClose={() => setAdding(false)}
           onCreated={(hostname) => {
-            if (editable) setup.mutate({ hostname });
+            if (editable) setSetupHost(hostname);
           }}
         />
       )}
+      {setupHost !== null && <SetupConfirmDialog hostname={setupHost} onClose={() => setSetupHost(null)} />}
       {confirmId !== null && (
         <ConfirmDialog
           title="Delete this web address?"
@@ -181,7 +166,6 @@ function AddDomainModal({ onClose, onCreated }: { onClose: () => void; onCreated
   const invalidate = useInvalidate();
   const { notify } = useToast();
   const [hostname, setHostname] = useState("");
-  const [kind, setKind] = useState<DomainKind>("subdomain");
   const [errors, setErrors] = useState<FormErrors>(NO_ERRORS);
 
   const create = useMutation(
@@ -205,7 +189,7 @@ function AddDomainModal({ onClose, onCreated }: { onClose: () => void; onCreated
           <Button variant="ghost" onClick={onClose} disabled={create.isPending}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={() => create.mutate({ hostname, kind })} disabled={create.isPending}>
+          <Button variant="primary" onClick={() => create.mutate({ hostname })} disabled={create.isPending}>
             {create.isPending ? "Adding..." : "Add"}
           </Button>
         </>
@@ -215,14 +199,14 @@ function AddDomainModal({ onClose, onCreated }: { onClose: () => void; onCreated
         className="stack"
         onSubmit={(e) => {
           e.preventDefault();
-          create.mutate({ hostname, kind });
+          create.mutate({ hostname });
         }}
       >
         {errors.message && <ErrorBanner message={errors.message} />}
         <Field
           label="Web address"
           htmlFor="hostname"
-          hint="A subdomain (go.example.com), or your root domain (example.com). If Cloudflare is connected, we set it up for you."
+          hint="A subdomain (go.example.com) or your root domain (example.com). After you add it, we'll show you exactly how it gets set up on Cloudflare."
           error={errors.fields.hostname}
         >
           <Input
@@ -232,22 +216,6 @@ function AddDomainModal({ onClose, onCreated }: { onClose: () => void; onCreated
             placeholder="go.example.com"
             autoFocus
             onChange={(e) => setHostname(e.target.value)}
-          />
-        </Field>
-        <Field
-          label="Type"
-          htmlFor="kind"
-          hint="A subdomain of your app works right away. A custom domain needs extra setup."
-          error={errors.fields.kind}
-        >
-          <Select
-            id="kind"
-            value={kind}
-            onValueChange={(v) => setKind(v === "custom" ? "custom" : "subdomain")}
-            options={[
-              { value: "subdomain", label: "Subdomain (works immediately)" },
-              { value: "custom", label: "Custom domain (advanced)" },
-            ]}
           />
         </Field>
         <button type="submit" hidden />

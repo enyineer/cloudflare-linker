@@ -2,11 +2,20 @@ import { ORPCError } from "@orpc/server";
 import { and, eq, type SQL } from "drizzle-orm";
 import { getDb } from "../../db/client.ts";
 import { campaigns, clicks, domains, links, users } from "../../db/schema.ts";
+import { generateTempPassword, hashPassword } from "../password.ts";
 import { SLUG_RE, slugify } from "../../shared/format.ts";
 import { can } from "../../shared/roles.ts";
 import { getCampaignStats, getDomainStats, getLinkStats, getOverview } from "../analytics.ts";
 import { resolveRange } from "../analytics-range.ts";
-import { getDiagnostics, saveToken, selectAccount, setupHostname, syncLinkRoute, teardownHostname } from "../cloudflare.ts";
+import {
+  getDiagnostics,
+  previewHostname,
+  saveToken,
+  selectAccount,
+  setupHostname,
+  syncLinkRoute,
+  teardownHostname,
+} from "../cloudflare.ts";
 import {
   authed,
   badRequestError,
@@ -223,10 +232,15 @@ export const router = base.router({
     }),
     create: authed.users.create.handler(async ({ input, context }) => {
       if (!can(context.user.role, "manageUsers")) forbid("Only administrators can manage team members.");
+      const tempPassword = generateTempPassword();
+      const passwordHash = await hashPassword(tempPassword);
       try {
-        const [row] = await getDb(context.env).insert(users).values({ email: input.email, role: input.role }).returning();
+        const [row] = await getDb(context.env)
+          .insert(users)
+          .values({ email: input.email, role: input.role, passwordHash, passwordSetAt: new Date() })
+          .returning();
         if (!row) throw serverError();
-        return toUserDto(row);
+        return { ...toUserDto(row), tempPassword };
       } catch (err) {
         if (isUniqueViolation(err)) conflictError("That person already has access. Edit their role instead.");
         throw err;
@@ -248,6 +262,18 @@ export const router = base.router({
       if (input.email === context.user.email) badRequestError("You cannot remove your own account.");
       const [row] = await getDb(context.env).delete(users).where(eq(users.email, input.email)).returning();
       if (!row) notFoundError("That team member could not be found.");
+    }),
+    resetPassword: authed.users.resetPassword.handler(async ({ input, context }) => {
+      if (!can(context.user.role, "manageUsers")) forbid("Only administrators can manage team members.");
+      const tempPassword = generateTempPassword();
+      const passwordHash = await hashPassword(tempPassword);
+      const [row] = await getDb(context.env)
+        .update(users)
+        .set({ passwordHash, passwordSetAt: new Date() })
+        .where(eq(users.email, input.email))
+        .returning();
+      if (!row) notFoundError("That team member could not be found.");
+      return { tempPassword };
     }),
   },
 
@@ -286,6 +312,10 @@ export const router = base.router({
     selectAccount: authed.setup.selectAccount.handler(async ({ input, context }) => {
       if (!can(context.user.role, "manageUsers")) forbid("Only administrators can manage the Cloudflare connection.");
       return selectAccount(context.env, input.accountId);
+    }),
+    previewHostname: authed.setup.previewHostname.handler(async ({ input, context }) => {
+      if (!can(context.user.role, "writeDomains")) forbid("You do not have permission to set up web addresses.");
+      return previewHostname(context.env, input.hostname);
     }),
     setupHostname: authed.setup.setupHostname.handler(async ({ input, context }) => {
       if (!can(context.user.role, "writeDomains")) forbid("You do not have permission to set up web addresses.");

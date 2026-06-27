@@ -165,6 +165,7 @@ const CampaignDtoSchema = z.object({
   createdAt: z.string(),
 });
 const UserDtoSchema = z.object({ email: z.string(), role: z.enum(USER_ROLES), createdAt: z.string() });
+const CreatedUserDtoSchema = UserDtoSchema.extend({ tempPassword: z.string() });
 const MeDtoSchema = z.object({ email: z.string(), role: z.enum(USER_ROLES) });
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -266,10 +267,20 @@ const CfDiagnosticsDtoSchema = z.object({
 });
 export type CfDiagnosticsDto = z.infer<typeof CfDiagnosticsDtoSchema>;
 
+const setupCode = z.enum([
+  "ok",
+  "covered",
+  "zone_inactive",
+  "zone_not_found",
+  "no_permission",
+  "route_conflict",
+  "no_token",
+  "api_error",
+]);
 const enableStep = z.enum(["created", "updated", "exists", "conflict"]).nullable();
 const EnableResultSchema = z.object({
   ok: z.boolean(),
-  code: z.enum(["ok", "covered", "zone_inactive", "zone_not_found", "no_permission", "route_conflict", "no_token", "api_error"]),
+  code: setupCode,
   message: z.string(),
   mode: z.enum(["whole", "paths"]).nullable(),
   dns: enableStep,
@@ -277,6 +288,19 @@ const EnableResultSchema = z.object({
   tlsNote: z.string(),
 });
 export type EnableResultDto = z.infer<typeof EnableResultSchema>;
+
+// Read-only "what would happen" plan, shown for confirmation before any change.
+const SetupPlanSchema = z.object({
+  ok: z.boolean(),
+  code: setupCode,
+  hostname: z.string(),
+  mode: z.enum(["whole", "paths"]).nullable(),
+  alreadyDone: z.boolean(),
+  steps: z.array(z.object({ icon: z.enum(["dns", "route"]), text: z.string() })),
+  warning: z.string(),
+  message: z.string(),
+});
+export type SetupPlanDto = z.infer<typeof SetupPlanSchema>;
 
 // ── contract router ───────────────────────────────────────────────────────────
 
@@ -302,9 +326,10 @@ export const contract = {
   },
   users: {
     list: oc.output(z.array(UserDtoSchema)),
-    create: oc.input(userCreateSchema).output(UserDtoSchema),
+    create: oc.input(userCreateSchema).output(CreatedUserDtoSchema),
     update: oc.input(userUpdateSchema).output(UserDtoSchema),
     delete: oc.input(z.object({ email: emailField })).output(z.void()),
+    resetPassword: oc.input(z.object({ email: emailField })).output(z.object({ tempPassword: z.string() })),
   },
   analytics: {
     overview: oc.input(overviewInputSchema).output(OverviewDtoSchema),
@@ -320,6 +345,7 @@ export const contract = {
     selectAccount: oc
       .input(z.object({ accountId: z.string().min(1) }))
       .output(z.object({ ok: z.boolean(), message: z.string() })),
+    previewHostname: oc.input(z.object({ hostname: z.string().min(1) })).output(SetupPlanSchema),
     setupHostname: oc.input(z.object({ hostname: z.string().min(1) })).output(EnableResultSchema),
   },
 };

@@ -13,6 +13,7 @@ import { ensureMigrated } from "../db/migrate.ts";
 import { campaigns, clicks, domains, links } from "../db/schema.ts";
 import { RPCHandler } from "@orpc/server/fetch";
 import { normalizeHostname, normalizePath } from "../shared/format.ts";
+import { handleAuthRoutes } from "./api/auth-routes.ts";
 import { router } from "./api/router.ts";
 import { buildClickRecord, extractUtm } from "./click.ts";
 import { insertClick } from "./click-log.ts";
@@ -123,6 +124,10 @@ async function handleApi(request: Request, url: URL, env: Env): Promise<Response
   if (url.pathname === "/api/health" && request.method === "GET") {
     return handleHealth(env);
   }
+
+  // Auth endpoints set/clear the session cookie, so they're plain routes (not oRPC).
+  const authResponse = await handleAuthRoutes(request, url, env);
+  if (authResponse) return authResponse;
 
   await ensureMigrated(env.DB);
   const { matched, response } = await rpcHandler.handle(request, {
