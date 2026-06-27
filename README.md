@@ -29,6 +29,28 @@ Prefer the CLI? `bun install && bun run deploy`.
 
 ---
 
+## Updating to a new version
+
+The Deploy button **copies** this project into a new repo in your account (it isn't a GitHub fork), so your deployed repo starts with an **unrelated git history** - a plain `git pull` would refuse to merge. Adopt this repo's history **once**, and every update afterward is trivial:
+
+```bash
+# in a clone of YOUR deployed repo
+git remote add upstream https://github.com/enyineer/cloudflare-linker.git
+git fetch upstream
+git reset --hard upstream/main      # only if you've made no local changes
+git push --force origin main        # pushing triggers a redeploy (Workers Builds)
+```
+
+After that one-time step your repo shares history with upstream, so future updates are just:
+
+```bash
+git pull upstream main && git push  # fast-forward; auto-deploys on push
+```
+
+If you've customized your copy, cherry-pick or rebase your changes onto `upstream/main` instead of resetting. Either way there's no database step - migrations apply themselves on the next request.
+
+---
+
 ## Optional configuration
 
 Nothing is required - a fresh deploy works with no configuration. To preconfigure or override, set these in the dashboard under **Workers & Pages -> your Worker -> Settings -> Variables and Secrets** (or in `.dev.vars` for local dev). They are intentionally **not** declared in `wrangler.jsonc`, so the Deploy button doesn't turn them into mandatory fields.
