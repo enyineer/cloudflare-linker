@@ -1,7 +1,7 @@
 import { oc } from "@orpc/contract";
 import { z } from "zod";
 import { EMAIL_RE, HOSTNAME_RE, PATH_RE, SLUG_RE, isHttpUrl, normalizePath } from "./format.ts";
-import { DOMAIN_KINDS, DOMAIN_STATUSES, REDIRECT_TYPES, USER_ROLES } from "./types.ts";
+import { DOMAIN_KINDS, DOMAIN_STATUSES, REDIRECT_TYPES, ROUTING_MODES, USER_ROLES } from "./types.ts";
 
 /**
  * oRPC contract: the single source of truth for the admin API. Imported by BOTH
@@ -137,6 +137,7 @@ const DomainDtoSchema = z.object({
   hostname: z.string(),
   kind: z.enum(DOMAIN_KINDS),
   status: z.enum(DOMAIN_STATUSES),
+  routingMode: z.enum(ROUTING_MODES),
   createdAt: z.string(),
 });
 const LinkDtoSchema = z.object({
@@ -232,6 +233,51 @@ export type CampaignStatsDto = z.infer<typeof CampaignStatsDtoSchema>;
 export type DomainStatsDto = z.infer<typeof DomainStatsDtoSchema>;
 export type Breakdown = z.infer<typeof breakdownSchema>;
 
+const CfDiagnosticsDtoSchema = z.object({
+  configured: z.boolean(),
+  canSaveToken: z.boolean(),
+  tokenSource: z.enum(["secret", "saved", "none"]),
+  workerName: z.string(),
+  token: z.object({ ok: z.boolean(), message: z.string() }),
+  account: z.object({
+    id: z.string().nullable(),
+    name: z.string().nullable(),
+    needsSelection: z.boolean(),
+    options: z.array(z.object({ id: z.string(), name: z.string() })),
+    message: z.string(),
+  }),
+  routing: z.object({
+    checked: z.boolean(),
+    message: z.string(),
+    truncated: z.boolean(),
+    zones: z.array(
+      z.object({ id: z.string(), zone: z.string(), ok: z.boolean(), routes: z.array(z.string()), message: z.string() }),
+    ),
+  }),
+  customDomains: z.array(
+    z.object({
+      hostname: z.string(),
+      zoneOnAccount: z.boolean(),
+      attached: z.boolean(),
+      certProvisioned: z.boolean(),
+      message: z.string(),
+    }),
+  ),
+});
+export type CfDiagnosticsDto = z.infer<typeof CfDiagnosticsDtoSchema>;
+
+const enableStep = z.enum(["created", "updated", "exists", "conflict"]).nullable();
+const EnableResultSchema = z.object({
+  ok: z.boolean(),
+  code: z.enum(["ok", "covered", "zone_inactive", "zone_not_found", "no_permission", "route_conflict", "no_token", "api_error"]),
+  message: z.string(),
+  mode: z.enum(["whole", "paths"]).nullable(),
+  dns: enableStep,
+  route: enableStep,
+  tlsNote: z.string(),
+});
+export type EnableResultDto = z.infer<typeof EnableResultSchema>;
+
 // ── contract router ───────────────────────────────────────────────────────────
 
 export const contract = {
@@ -265,5 +311,15 @@ export const contract = {
     link: oc.input(statsInputSchema).output(LinkStatsDtoSchema),
     campaign: oc.input(statsInputSchema).output(CampaignStatsDtoSchema),
     domain: oc.input(statsInputSchema).output(DomainStatsDtoSchema),
+  },
+  setup: {
+    diagnostics: oc.output(CfDiagnosticsDtoSchema),
+    saveToken: oc
+      .input(z.object({ token: z.string().min(1, "Paste your Cloudflare API token.") }))
+      .output(z.object({ ok: z.boolean(), message: z.string() })),
+    selectAccount: oc
+      .input(z.object({ accountId: z.string().min(1) }))
+      .output(z.object({ ok: z.boolean(), message: z.string() })),
+    setupHostname: oc.input(z.object({ hostname: z.string().min(1) })).output(EnableResultSchema),
   },
 };

@@ -6,6 +6,7 @@ import { SLUG_RE, slugify } from "../../shared/format.ts";
 import { can } from "../../shared/roles.ts";
 import { getCampaignStats, getDomainStats, getLinkStats, getOverview } from "../analytics.ts";
 import { resolveRange } from "../analytics-range.ts";
+import { getDiagnostics, saveToken, selectAccount, setupHostname, syncLinkRoute, teardownHostname } from "../cloudflare.ts";
 import {
   authed,
   badRequestError,
@@ -28,6 +29,21 @@ async function assertDomainExists(env: Env, domainId: number): Promise<void> {
 async function assertCampaignExists(env: Env, campaignId: number): Promise<void> {
   const [row] = await getDb(env).select({ id: campaigns.id }).from(campaigns).where(eq(campaigns.id, campaignId)).limit(1);
   if (!row) badRequestError("That campaign could not be found.");
+}
+
+/** When a link's web address is in "paths" mode, keep its Cloudflare route in
+ *  sync. Best-effort: never blocks the link operation. */
+async function manageLinkRoute(env: Env, domainId: number, path: string, action: "add" | "remove"): Promise<void> {
+  try {
+    const [d] = await getDb(env)
+      .select({ hostname: domains.hostname, routingMode: domains.routingMode })
+      .from(domains)
+      .where(eq(domains.id, domainId))
+      .limit(1);
+    if (d?.routingMode === "paths") await syncLinkRoute(env, d.hostname, path, action);
+  } catch {
+    /* best-effort - a routing hiccup must not fail the link change */
+  }
 }
 
 export const router = base.router({
@@ -67,6 +83,8 @@ export const router = base.router({
       if (!can(context.user.role, "writeDomains")) forbid("Only administrators can remove web addresses.");
       const [row] = await getDb(context.env).delete(domains).where(eq(domains.id, input.id)).returning();
       if (!row) notFoundError("That web address could not be found.");
+      // Best-effort: remove the Cloudflare routes + placeholder DNS we created for it.
+      await teardownHostname(context.env, row.hostname).catch(() => {});
     }),
   },
 
@@ -102,6 +120,7 @@ export const router = base.router({
           })
           .returning();
         if (!row) throw serverError();
+        await manageLinkRoute(context.env, row.domainId, row.path, "add");
         return toLinkDto(row);
       } catch (err) {
         if (isUniqueViolation(err)) conflictError("There is already a link for that path on this web address.");
@@ -114,9 +133,18 @@ export const router = base.router({
       if (rest.campaignId != null) await assertCampaignExists(context.env, rest.campaignId);
       const set = definedOnly(rest);
       if (Object.keys(set).length === 0) badRequestError("There is nothing to update.");
+      const [before] = await getDb(context.env)
+        .select({ domainId: links.domainId, path: links.path })
+        .from(links)
+        .where(eq(links.id, id))
+        .limit(1);
       try {
         const [row] = await getDb(context.env).update(links).set(set).where(eq(links.id, id)).returning();
         if (!row) notFoundError("That link could not be found.");
+        if (before && before.path !== row.path) {
+          await manageLinkRoute(context.env, before.domainId, before.path, "remove");
+          await manageLinkRoute(context.env, row.domainId, row.path, "add");
+        }
         return toLinkDto(row);
       } catch (err) {
         if (isUniqueViolation(err)) conflictError("There is already a link for that path on this web address.");
@@ -127,6 +155,7 @@ export const router = base.router({
       if (!can(context.user.role, "writeLinks")) forbid("You do not have permission to manage links.");
       const [row] = await getDb(context.env).delete(links).where(eq(links.id, input.id)).returning();
       if (!row) notFoundError("That link could not be found.");
+      await manageLinkRoute(context.env, row.domainId, row.path, "remove");
     }),
   },
 
@@ -238,6 +267,36 @@ export const router = base.router({
     domain: authed.analytics.domain.handler(async ({ input, context }) => {
       const range = resolveRange(input.from, input.to, new Date());
       return getDomainStats(context.env, range, input.id);
+    }),
+  },
+
+  setup: {
+    diagnostics: authed.setup.diagnostics.handler(async ({ context }) => {
+      if (!can(context.user.role, "manageUsers")) forbid("Only administrators can view setup diagnostics.");
+      const rows = await getDb(context.env)
+        .select({ hostname: domains.hostname })
+        .from(domains)
+        .where(eq(domains.kind, "custom"));
+      return getDiagnostics(context.env, rows.map((r) => r.hostname));
+    }),
+    saveToken: authed.setup.saveToken.handler(async ({ input, context }) => {
+      if (!can(context.user.role, "manageUsers")) forbid("Only administrators can manage the Cloudflare connection.");
+      return saveToken(context.env, input.token);
+    }),
+    selectAccount: authed.setup.selectAccount.handler(async ({ input, context }) => {
+      if (!can(context.user.role, "manageUsers")) forbid("Only administrators can manage the Cloudflare connection.");
+      return selectAccount(context.env, input.accountId);
+    }),
+    setupHostname: authed.setup.setupHostname.handler(async ({ input, context }) => {
+      if (!can(context.user.role, "writeDomains")) forbid("You do not have permission to set up web addresses.");
+      const result = await setupHostname(context.env, input.hostname);
+      if (result.ok && result.mode) {
+        await getDb(context.env)
+          .update(domains)
+          .set({ routingMode: result.mode })
+          .where(eq(domains.hostname, input.hostname));
+      }
+      return result;
     }),
   },
 });

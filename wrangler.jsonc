@@ -49,8 +49,22 @@
 
     // This email becomes the first admin on first authenticated request, and is
     // also the identity used in local dev when Access is not configured.
-    "BOOTSTRAP_ADMIN_EMAIL": ""
+    "BOOTSTRAP_ADMIN_EMAIL": "",
+
+    // Optional Cloudflare API integration (Setup page diagnostics + custom-domain
+    // automation). The operator pastes the token into the Setup page; it is
+    // verified, encrypted, and stored in D1 (key in SECRETS_KV). A deploy-time
+    // CLOUDFLARE_API_TOKEN secret, if set, takes precedence. Account id is
+    // derived from the token (chosen on the Setup page if there are several);
+    // zones are listed automatically. So the only optional knob here is:
+    "CLOUDFLARE_ACCOUNT_ID": "", // optional - derived from the token / chosen on the Setup page when blank
+    "CLOUDFLARE_WORKER_NAME": "cloudflare-linker" // this Worker's script name (matches `name` above)
   },
+
+  // KV namespace for the at-rest encryption key (the pasted Cloudflare token is
+  // stored AES-GCM-encrypted in D1; the key lives here so a D1-only leak is not
+  // plaintext). `id` is omitted so Cloudflare auto-provisions it on deploy.
+  "kv_namespaces": [{ "binding": "SECRETS_KV" }],
 
   "observability": { "enabled": true }
 }

@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "wouter";
-import type { DomainKind } from "../../shared/types.ts";
+import type { DomainKind, RoutingMode } from "../../shared/types.ts";
 import { can } from "../../shared/roles.ts";
 import { Badge } from "../components/Badge.tsx";
 import { Button } from "../components/Button.tsx";
@@ -14,7 +14,6 @@ import { Modal } from "../components/Modal.tsx";
 import { Select } from "../components/Select.tsx";
 import { useToast } from "../components/Toast.tsx";
 import { toFormErrors, toMessage, type FormErrors } from "../lib/errors.ts";
-import { formatDate } from "../lib/format.ts";
 import { useMe } from "../lib/me.tsx";
 import { useInvalidate } from "../lib/mutations.ts";
 import { orpc } from "../orpc.ts";
@@ -45,6 +44,21 @@ export function DomainsPage() {
   const update = useMutation(
     orpc.domains.update.mutationOptions({
       onSuccess: async () => invalidate(orpc.domains.key()),
+      onError: (err) => notify(toMessage(err), "error"),
+    }),
+  );
+
+  // Set up (or re-check) a web address on Cloudflare. Used on add and per-row.
+  const setup = useMutation(
+    orpc.setup.setupHostname.mutationOptions({
+      onSuccess: async (res) => {
+        if (res.ok) {
+          await invalidate(orpc.domains.key());
+          notify(res.message);
+        } else {
+          notify(res.message, "error");
+        }
+      },
       onError: (err) => notify(toMessage(err), "error"),
     }),
   );
@@ -93,13 +107,23 @@ export function DomainsPage() {
                   <Link href={`/domains/${d.id}`} className="row__link mono">
                     {d.hostname}
                   </Link>
-                  <div className="row__sub">
-                    {d.kind === "custom" ? "Custom domain" : "Subdomain"} · added {formatDate(d.createdAt)}
-                  </div>
+                  <div className="row__sub">{routingHint(d.hostname, d.routingMode)}</div>
                 </div>
-                <StatusBadge status={d.status} />
+                <RoutingBadge mode={d.routingMode} />
                 {editable && (
                   <div className="row__actions">
+                    <Button
+                      size="sm"
+                      variant={d.routingMode === "none" ? "primary" : "ghost"}
+                      disabled={setup.isPending && setup.variables?.hostname === d.hostname}
+                      onClick={() => setup.mutate({ hostname: d.hostname })}
+                    >
+                      {setup.isPending && setup.variables?.hostname === d.hostname
+                        ? "Working..."
+                        : d.routingMode === "none"
+                          ? "Set up"
+                          : "Re-check"}
+                    </Button>
                     {d.status !== "pending" && (
                       <Button
                         size="sm"
@@ -120,7 +144,14 @@ export function DomainsPage() {
         </div>
       )}
 
-      {adding && <AddDomainModal onClose={() => setAdding(false)} />}
+      {adding && (
+        <AddDomainModal
+          onClose={() => setAdding(false)}
+          onCreated={(hostname) => {
+            if (editable) setup.mutate({ hostname });
+          }}
+        />
+      )}
       {confirmId !== null && (
         <ConfirmDialog
           title="Delete this web address?"
@@ -134,13 +165,19 @@ export function DomainsPage() {
   );
 }
 
-function StatusBadge({ status }: { status: "active" | "disabled" | "pending" }) {
-  if (status === "active") return <Badge tone="ok">Active</Badge>;
-  if (status === "pending") return <Badge tone="warn">Awaiting setup</Badge>;
-  return <Badge tone="muted">Off</Badge>;
+function RoutingBadge({ mode }: { mode: RoutingMode }) {
+  if (mode === "whole") return <Badge tone="ok">Connected</Badge>;
+  if (mode === "paths") return <Badge tone="ok">Specific links</Badge>;
+  return <Badge tone="warn">Not set up</Badge>;
 }
 
-function AddDomainModal({ onClose }: { onClose: () => void }) {
+function routingHint(hostname: string, mode: RoutingMode): string {
+  if (mode === "whole") return `Set up - the whole address opens your links.`;
+  if (mode === "paths") return `Set up - only your link paths open here; the rest of ${hostname} is untouched.`;
+  return "Not set up to receive visitors yet.";
+}
+
+function AddDomainModal({ onClose, onCreated }: { onClose: () => void; onCreated: (hostname: string) => void }) {
   const invalidate = useInvalidate();
   const { notify } = useToast();
   const [hostname, setHostname] = useState("");
@@ -149,10 +186,11 @@ function AddDomainModal({ onClose }: { onClose: () => void }) {
 
   const create = useMutation(
     orpc.domains.create.mutationOptions({
-      onSuccess: async () => {
+      onSuccess: async (created) => {
         await invalidate(orpc.domains.key());
         notify("Web address added.");
         onClose();
+        onCreated(created.hostname);
       },
       onError: (err) => setErrors(toFormErrors(err)),
     }),
@@ -181,7 +219,12 @@ function AddDomainModal({ onClose }: { onClose: () => void }) {
         }}
       >
         {errors.message && <ErrorBanner message={errors.message} />}
-        <Field label="Web address" htmlFor="hostname" hint="For example: go.your-app.com" error={errors.fields.hostname}>
+        <Field
+          label="Web address"
+          htmlFor="hostname"
+          hint="A subdomain (go.example.com), or your root domain (example.com). If Cloudflare is connected, we set it up for you."
+          error={errors.fields.hostname}
+        >
           <Input
             id="hostname"
             value={hostname}

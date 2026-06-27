@@ -4,6 +4,7 @@ import {
   DEVICE_CATEGORIES,
   DOMAIN_KINDS,
   DOMAIN_STATUSES,
+  ROUTING_MODES,
   USER_ROLES,
   type QueryParam,
   type RedirectType,
@@ -22,6 +23,8 @@ export const domains = sqliteTable("domains", {
   hostname: text("hostname").notNull().unique(),
   kind: text("kind", { enum: DOMAIN_KINDS }).notNull().default("subdomain"),
   status: text("status", { enum: DOMAIN_STATUSES }).notNull().default("active"),
+  // How it is wired on Cloudflare (set when the operator runs setup).
+  routingMode: text("routing_mode", { enum: ROUTING_MODES }).notNull().default("none"),
   createdAt: createdAt(),
 });
 
@@ -110,6 +113,32 @@ export const clicks = sqliteTable(
     index("clicks_campaign_idx").on(t.campaignId),
   ],
 );
+
+// ── app config ───────────────────────────────────────────────────────────────
+// Non-secret key/value settings managed by the app (e.g. the chosen Cloudflare
+// account when the token can see several). Strong read-after-write, unlike KV.
+export const appConfig = sqliteTable("app_config", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`)
+    .$onUpdate(() => new Date()),
+});
+
+// ── secrets ──────────────────────────────────────────────────────────────────
+// App-managed secrets (e.g. the operator-pasted Cloudflare API token), stored
+// AES-GCM-encrypted at rest. The encryption key lives in KV, not here, so a
+// D1-only leak does not reveal plaintext.
+export const secrets = sqliteTable("secrets", {
+  name: text("name").primaryKey(),
+  ciphertext: text("ciphertext").notNull(),
+  iv: text("iv").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .default(sql`(unixepoch())`)
+    .$onUpdate(() => new Date()),
+});
 
 // ── users ────────────────────────────────────────────────────────────────────
 // Identity comes from Cloudflare Access (verified email); this maps email -> role.

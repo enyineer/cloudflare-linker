@@ -9,6 +9,7 @@ export function toDomainDto(row: Domain): DomainDto {
     hostname: row.hostname,
     kind: row.kind,
     status: row.status,
+    routingMode: row.routingMode,
     createdAt: row.createdAt.toISOString(),
   };
 }

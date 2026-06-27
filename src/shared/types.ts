@@ -9,6 +9,14 @@ export type DomainKind = (typeof DOMAIN_KINDS)[number];
 export const DOMAIN_STATUSES = ["active", "disabled", "pending"] as const;
 export type DomainStatus = (typeof DOMAIN_STATUSES)[number];
 
+// How this web address is wired on Cloudflare:
+//  none  - not set up (no route yet)
+//  whole - the whole hostname routes to the Worker (host/*); covers all paths
+//  paths - only specific link paths route to the Worker (coexists with an
+//          existing site); a route is managed per link
+export const ROUTING_MODES = ["none", "whole", "paths"] as const;
+export type RoutingMode = (typeof ROUTING_MODES)[number];
+
 export const USER_ROLES = ["admin", "editor", "viewer"] as const;
 export type Role = (typeof USER_ROLES)[number];
 

@@ -12,9 +12,7 @@ A self-service link redirect and click-analytics tool that runs **entirely on Cl
 
 ## Deploy to Cloudflare
 
-> Replace `YOUR-USERNAME` below with your GitHub account after pushing this repo to GitHub. The Deploy button needs a public repository that contains `wrangler.jsonc`.
-
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/YOUR-USERNAME/cloudflare-linker)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/enyineer/cloudflare-linker)
 
 What the button does:
 
@@ -41,7 +39,26 @@ These are plain environment variables (not secrets). Set them in the Cloudflare 
 
 **Security note:** if `TEAM_DOMAIN` + `POLICY_AUD` are not set, a **deployed** (non-localhost) admin returns `401` and cannot be used. Cloudflare Access is required in production. The `BOOTSTRAP_ADMIN_EMAIL`-only fallback works for `localhost` development only.
 
-No secrets are required for the core app. (A Cloudflare API token is only needed for the advanced custom-domain path, below.)
+No secrets are required for the core app.
+
+### Optional: Cloudflare connection (Setup page)
+
+If you connect a Cloudflare API token, the admin **Setup** page (admin only) runs read-only checks: is the token valid, which of your zones have a **wildcard route** to this Worker (catches the "wrong wildcard" / "no route" case), and what is each custom domain's status (zone on account / attached / certificate). The account and zones are read from the token - nothing to type. It stays hidden until configured, and the app works fine without it.
+
+**Connecting takes two clicks - no CLI required.** On the Setup page:
+
+1. Click **Create a read-only token** - it opens Cloudflare's token form with the needed scopes (`Zone:Read`, `Workers Routes:Read`, `Account Workers Scripts:Read`) pre-selected. Create it and copy it.
+2. **Paste it** into the Setup page and Save. The app verifies it with Cloudflare, then stores it **AES-GCM-encrypted in D1** (the key lives in an auto-provisioned `SECRETS_KV` namespace, so a database-only leak is not plaintext). No redeploy; rotating is just another paste.
+
+> Security note: the token is stored in the app's own (encrypted) database, so the app's code can read it. Use the **narrowest scope** possible (read-only for diagnostics). For maximum isolation you can instead set a deploy-time secret `wrangler secret put CLOUDFLARE_API_TOKEN`, which always takes precedence over the saved one.
+
+There is nothing required - pasting a token is enough. The remaining knobs are all optional overrides:
+
+| Variable | Type | What it is |
+| --- | --- | --- |
+| `CLOUDFLARE_ACCOUNT_ID` | var (optional) | Override the account. Derived from the token, or chosen on the Setup page when the token can see several. |
+| `CLOUDFLARE_WORKER_NAME` | var | This Worker's script name (defaults to `cloudflare-linker`). A Worker can't read its own name at runtime, so this is a plain default. |
+| `CLOUDFLARE_API_TOKEN` | Secret (optional) | Alternative to pasting: set the token as a deploy-time secret. Takes precedence over the saved one. |
 
 ---
 
@@ -73,6 +90,8 @@ Attaching an external root domain to a Worker requires a custom-domain binding o
 1. Make sure the domain's zone is on your Cloudflare account.
 2. In the Cloudflare dashboard, go to **Workers & Pages -> your Worker -> Settings -> Domains & Routes -> Add -> Custom Domain**, and add the hostname. (Or run `bunx wrangler deployments` workflows / a route as documented by Cloudflare.)
 3. Once Cloudflare shows the custom domain as active, set the domain's status to **Active** in the admin.
+
+If you've connected the Cloudflare API (above), the **Setup** page shows each custom domain's live status (zone found, attached, certificate) so you can confirm the steps worked.
 
 ---
 

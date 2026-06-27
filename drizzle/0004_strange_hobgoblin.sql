@@ -1,0 +1,1 @@
+ALTER TABLE `domains` ADD `routing_mode` text DEFAULT 'none' NOT NULL;

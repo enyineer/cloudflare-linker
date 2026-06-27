@@ -15,6 +15,27 @@
       "when": 1782584702919,
       "tag": "0001_equal_archangel",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1782590315569,
+      "tag": "0002_colorful_ghost_rider",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1782591575769,
+      "tag": "0003_same_peter_quill",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1782593854915,
+      "tag": "0004_strange_hobgoblin",
+      "breakpoints": true
     }
   ]
 }

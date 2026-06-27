@@ -14,6 +14,7 @@ import { DomainsPage } from "./pages/DomainsPage.tsx";
 import { Home } from "./pages/Home.tsx";
 import { LinkDetailPage } from "./pages/LinkDetailPage.tsx";
 import { LinksPage } from "./pages/LinksPage.tsx";
+import { SetupPage } from "./pages/SetupPage.tsx";
 import { TeamPage } from "./pages/TeamPage.tsx";
 
 export function App() {
@@ -58,6 +59,7 @@ function Gate() {
           <Route path="/campaigns" component={CampaignsPage} />
           <Route path="/campaigns/:id" component={CampaignDetailPage} />
           <Route path="/team" component={TeamPage} />
+          <Route path="/setup" component={SetupPage} />
           <Route>
             <NotFound />
           </Route>

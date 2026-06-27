@@ -98,13 +98,15 @@ export function TeamPage() {
                     </div>
                     <div className="row__sub">Added {formatDate(u.createdAt)}</div>
                   </div>
-                  <Select
-                    value={u.role}
-                    disabled={isSelf || update.isPending}
-                    onValueChange={(v) => update.mutate({ email: u.email, role: asRole(v) })}
-                    ariaLabel={`Role for ${u.email}`}
-                    options={ROLE_OPTIONS}
-                  />
+                  <div className="row__role">
+                    <Select
+                      value={u.role}
+                      disabled={isSelf || update.isPending}
+                      onValueChange={(v) => update.mutate({ email: u.email, role: asRole(v) })}
+                      ariaLabel={`Role for ${u.email}`}
+                      options={ROLE_OPTIONS}
+                    />
+                  </div>
                   <div className="row__actions">
                     <Button size="sm" variant="danger" disabled={isSelf} onClick={() => setConfirmEmail(u.email)}>
                       Remove
