@@ -179,3 +179,9 @@ src/
   client/     React SPA (pages, components, lib)
 drizzle/      generated SQL migrations
 ```
+
+---
+
+## License
+
+[MIT](LICENSE) (c) Nico Enking.
