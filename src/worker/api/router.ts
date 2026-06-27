@@ -6,6 +6,7 @@ import { generateTempPassword, hashPassword } from "../password.ts";
 import { SLUG_RE, slugify } from "../../shared/format.ts";
 import { can } from "../../shared/roles.ts";
 import { getCampaignStats, getDomainStats, getLinkStats, getOverview } from "../analytics.ts";
+import { listAudit } from "../audit.ts";
 import { resolveRange } from "../analytics-range.ts";
 import {
   getDiagnostics,
@@ -26,7 +27,7 @@ import {
   isUniqueViolation,
   notFoundError,
 } from "./orpc.ts";
-import { toCampaignDto, toDomainDto, toLinkDto, toUserDto } from "./serializers.ts";
+import { toAuditDto, toCampaignDto, toDomainDto, toLinkDto, toUserDto } from "./serializers.ts";
 
 const serverError = () => new ORPCError("INTERNAL_SERVER_ERROR");
 
@@ -274,6 +275,14 @@ export const router = base.router({
         .returning();
       if (!row) notFoundError("That team member could not be found.");
       return { tempPassword };
+    }),
+  },
+
+  audit: {
+    list: authed.audit.list.handler(async ({ input, context }) => {
+      if (!can(context.user.role, "manageUsers")) forbid("Only administrators can view the audit log.");
+      const rows = await listAudit(context.env, { limit: input.limit ?? 100, before: input.before });
+      return rows.map(toAuditDto);
     }),
   },
 

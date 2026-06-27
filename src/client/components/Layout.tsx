@@ -22,7 +22,7 @@ export function Layout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const me = useMe();
   const items = can(me.role, "manageUsers")
-    ? [...NAV, { href: "/team", label: "Team" }, { href: "/setup", label: "Setup" }]
+    ? [...NAV, { href: "/team", label: "Team" }, { href: "/audit", label: "Audit log" }, { href: "/setup", label: "Setup" }]
     : NAV;
 
   return (

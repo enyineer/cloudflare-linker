@@ -1,5 +1,9 @@
-import type { Campaign, Domain, Link, User } from "../../db/schema.ts";
-import type { CampaignDto, DomainDto, LinkDto, UserDto } from "../../shared/contract.ts";
+import type { AuditEntry, Campaign, Domain, Link, User } from "../../db/schema.ts";
+import type { AuditEntryDto, CampaignDto, DomainDto, LinkDto, UserDto } from "../../shared/contract.ts";
+
+export function toAuditDto(row: AuditEntry): AuditEntryDto {
+  return { id: row.id, ts: row.ts.toISOString(), actor: row.actor, action: row.action, summary: row.summary };
+}
 
 /** Pure row -> wire DTO mappers (Date -> ISO string). Testable, no IO. */
 

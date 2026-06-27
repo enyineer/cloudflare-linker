@@ -126,6 +126,18 @@ export const appConfig = sqliteTable("app_config", {
     .$onUpdate(() => new Date()),
 });
 
+// ── audit log ──────────────────────────────────────────────────────────────────
+// One row per admin action (create/update/delete, setup, sign-in), for abuse
+// review. `actor` is a plain email string (no FK) so entries survive user removal.
+// Never stores secrets (tokens/passwords) - only safe human summaries.
+export const auditLog = sqliteTable("audit_log", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  ts: integer("ts", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
+  actor: text("actor").notNull(),
+  action: text("action").notNull(),
+  summary: text("summary").notNull(),
+});
+
 // ── secrets ──────────────────────────────────────────────────────────────────
 // App-managed secrets (e.g. the operator-pasted Cloudflare API token), stored
 // AES-GCM-encrypted at rest. The encryption key lives in KV, not here, so a
@@ -180,3 +192,4 @@ export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Passkey = typeof passkeys.$inferSelect;
 export type NewPasskey = typeof passkeys.$inferInsert;
+export type AuditEntry = typeof auditLog.$inferSelect;

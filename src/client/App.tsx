@@ -10,6 +10,7 @@ import { errorCode, toFormErrors } from "./lib/errors.ts";
 import { MeProvider } from "./lib/me.tsx";
 import { orpc, queryClient } from "./orpc.ts";
 import { AccountPage } from "./pages/AccountPage.tsx";
+import { AuditLogPage } from "./pages/AuditLogPage.tsx";
 import { AuthScreens } from "./pages/AuthScreens.tsx";
 import { CampaignDetailPage } from "./pages/CampaignDetailPage.tsx";
 import { CampaignsPage } from "./pages/CampaignsPage.tsx";
@@ -76,6 +77,7 @@ function Gate() {
           <Route path="/campaigns/:id" component={CampaignDetailPage} />
           <Route path="/team" component={TeamPage} />
           <Route path="/setup" component={SetupPage} />
+          <Route path="/audit" component={AuditLogPage} />
           <Route path="/account" component={AccountPage} />
           <Route>
             <NotFound />

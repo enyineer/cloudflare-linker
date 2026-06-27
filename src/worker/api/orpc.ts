@@ -1,5 +1,7 @@
 import { implement, ORPCError } from "@orpc/server";
 import { contract } from "../../shared/contract.ts";
+import { auditSummary } from "../audit-summary.ts";
+import { recordAudit } from "../audit.ts";
 import { authenticate } from "../auth.ts";
 
 /** oRPC server foundation: implements the shared contract, injects per-request
@@ -12,14 +14,18 @@ export interface InitialContext {
 
 export const base = implement(contract).$context<InitialContext>();
 
-// Verify identity (Access JWT in prod / bootstrap email in dev) and attach the
-// user (email + role) to context for every authenticated procedure.
-const requireAuth = base.middleware(async ({ context, next }) => {
+// Verify identity from the session cookie, attach the user (email + role) to
+// context, and - after a successful mutation - record an audit entry (reads
+// return a null summary and are skipped).
+const requireAuth = base.middleware(async ({ context, path, next }, input) => {
   const auth = await authenticate(context.request, context.env);
   if (!auth.ok) {
     throw new ORPCError(auth.status === 403 ? "FORBIDDEN" : "UNAUTHORIZED", { message: auth.message });
   }
-  return next({ context: { user: { email: auth.email, role: auth.role } } });
+  const result = await next({ context: { user: { email: auth.email, role: auth.role } } });
+  const summary = auditSummary(path, (input ?? {}) as Record<string, unknown>);
+  if (summary) await recordAudit(context.env, auth.email, path.join("."), summary);
+  return result;
 });
 
 export const authed = base.use(requireAuth);

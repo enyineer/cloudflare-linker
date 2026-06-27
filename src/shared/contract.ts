@@ -167,6 +167,14 @@ const CampaignDtoSchema = z.object({
 const UserDtoSchema = z.object({ email: z.string(), role: z.enum(USER_ROLES), createdAt: z.string() });
 const CreatedUserDtoSchema = UserDtoSchema.extend({ tempPassword: z.string() });
 const MeDtoSchema = z.object({ email: z.string(), role: z.enum(USER_ROLES) });
+const AuditEntryDtoSchema = z.object({
+  id: z.number(),
+  ts: z.string(),
+  actor: z.string(),
+  action: z.string(),
+  summary: z.string(),
+});
+export type AuditEntryDto = z.infer<typeof AuditEntryDtoSchema>;
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const dateField = z.string().regex(DATE_RE, "Use a date like 2026-01-31.").optional();
@@ -330,6 +338,11 @@ export const contract = {
     update: oc.input(userUpdateSchema).output(UserDtoSchema),
     delete: oc.input(z.object({ email: emailField })).output(z.void()),
     resetPassword: oc.input(z.object({ email: emailField })).output(z.object({ tempPassword: z.string() })),
+  },
+  audit: {
+    list: oc
+      .input(z.object({ before: id.optional(), limit: z.number().int().min(1).max(200).optional() }))
+      .output(z.array(AuditEntryDtoSchema)),
   },
   analytics: {
     overview: oc.input(overviewInputSchema).output(OverviewDtoSchema),

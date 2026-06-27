@@ -3,6 +3,7 @@ import { getDb } from "../../db/client.ts";
 import { ensureMigrated } from "../../db/migrate.ts";
 import { users } from "../../db/schema.ts";
 import { EMAIL_RE } from "../../shared/format.ts";
+import { recordAudit } from "../audit.ts";
 import { hashPassword, verifyPassword } from "../password.ts";
 import { issueSession, readSession, sessionClearCookie, sessionSetCookie } from "../session.ts";
 
@@ -73,6 +74,7 @@ async function login(request: Request, env: Env): Promise<Response> {
     return jsonError(401, "Invalid email or password.");
   }
   await clearRateLimit(env, email);
+  await recordAudit(env, email, "auth.login", "Signed in");
   return ok({ ok: true }, sessionSetCookie(await issueSession(env, email)));
 }
 
@@ -96,6 +98,7 @@ async function setPassword(request: Request, env: Env): Promise<Response> {
     .insert(users)
     .values({ email, role: "admin", passwordHash: hash, passwordSetAt: new Date() })
     .onConflictDoUpdate({ target: users.email, set: { passwordHash: hash, passwordSetAt: new Date(), role: "admin" } });
+  await recordAudit(env, email, "auth.set_password", "Created the first admin account");
   return ok({ ok: true }, sessionSetCookie(await issueSession(env, email)));
 }
 
@@ -116,6 +119,7 @@ async function changePassword(request: Request, env: Env): Promise<Response> {
   }
   const hash = await hashPassword(newPassword);
   await db.update(users).set({ passwordHash: hash, passwordSetAt: new Date() }).where(eq(users.email, email));
+  await recordAudit(env, email, "auth.change_password", "Changed password");
   return Response.json({ ok: true });
 }
 
