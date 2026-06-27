@@ -92,10 +92,21 @@ a { color: var(--color-accent-strong); }
 .stack > * + * { margin-top: var(--stack-gap, 14px); }
 
 /* centered single-card screens (auth, no-access) */
-.center-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
-.auth-card { width: 100%; max-width: 380px; }
+.auth-card { width: 100%; max-width: 380px; text-align: left; }
 .auth-card__brand { display: flex; align-items: center; gap: 8px; font-weight: 700; }
-.auth-card__title { margin: 16px 0 4px; font-size: 1.3rem; }
+.auth-card__title { margin: 18px 0 16px; font-size: 1.3rem; }
+.btn--block { display: flex; width: 100%; }
+.auth-actions { display: flex; gap: 10px; }
+.auth-actions > .btn { flex: 1; }
+.auth-or {
+  display: flex; align-items: center; gap: 10px; color: var(--color-text-muted); font-size: 0.8rem; margin: 2px 0;
+}
+.auth-or::before, .auth-or::after { content: ""; flex: 1; height: 1px; background: var(--color-border); }
+.auth-link {
+  display: block; width: 100%; margin-top: 4px;
+  background: none; border: none; padding: 4px; cursor: pointer; font: inherit; font-size: 0.85rem;
+  color: var(--color-accent-strong); text-align: center; text-decoration: underline;
+}
 .user-chip__id { display: flex; align-items: center; gap: 8px; text-decoration: none; }
 .credential {
   display: flex; align-items: center; gap: 10px; justify-content: space-between;
@@ -287,7 +298,7 @@ a { color: var(--color-accent-strong); }
 
 /* ── misc ───────────────────────────────────────────────────────────────── */
 .muted { color: var(--color-text-muted); }
-.center-screen { min-height: 70vh; display: grid; place-items: center; text-align: center; padding: 24px; }
+.center-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
 .spinner {
   width: 22px; height: 22px; border-radius: 50%;
   border: 3px solid var(--color-border); border-top-color: var(--color-accent);

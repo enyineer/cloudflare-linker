@@ -5,6 +5,7 @@ import { Input } from "../components/controls.tsx";
 import { ErrorBanner, LoadingScreen } from "../components/Feedback.tsx";
 import { Field } from "../components/Field.tsx";
 import { authApi } from "../lib/authApi.ts";
+import { passkeyApi } from "../lib/passkeyApi.ts";
 
 /** Shown when there's no valid session: first-run "create admin password" on a
  *  fresh install, otherwise the sign-in form. */
@@ -32,22 +33,58 @@ function Shell({ title, subtitle, children }: { title: string; subtitle?: string
 }
 
 function LoginForm({ onAuthed }: { onAuthed: () => void }) {
+  const [mode, setMode] = useState<"password" | "reset">("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const submit = async () => {
+  const run = async (fn: () => Promise<void>) => {
     setError(null);
     setBusy(true);
     try {
-      await authApi.login(email.trim(), password);
+      await fn();
       onAuthed();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign-in failed.");
+      setError(err instanceof Error ? err.message : "Something went wrong.");
       setBusy(false);
     }
   };
+
+  if (mode === "reset") {
+    const valid = email.trim() !== "" && newPassword.length >= 12;
+    return (
+      <Shell title="Reset your password" subtitle="Confirm with a passkey, then choose a new password.">
+        <form
+          className="stack"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (valid) run(() => passkeyApi.reset(email.trim(), newPassword));
+          }}
+        >
+          {error && <ErrorBanner message={error} />}
+          <Field label="Email" htmlFor="r-email">
+            <Input id="r-email" type="email" autoComplete="username" value={email} autoFocus onChange={(e) => setEmail(e.target.value)} />
+          </Field>
+          <Field label="New password" htmlFor="r-pw" hint="At least 12 characters.">
+            <Input id="r-pw" type="password" autoComplete="new-password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+          </Field>
+          <Button
+            variant="primary"
+            className="btn--block"
+            onClick={() => run(() => passkeyApi.reset(email.trim(), newPassword))}
+            disabled={busy || !valid}
+          >
+            {busy ? "Waiting for your device..." : "Reset with a passkey"}
+          </Button>
+          <button type="button" className="auth-link" onClick={() => setMode("password")}>
+            Back to sign in
+          </button>
+        </form>
+      </Shell>
+    );
+  }
 
   return (
     <Shell title="Sign in">
@@ -55,7 +92,7 @@ function LoginForm({ onAuthed }: { onAuthed: () => void }) {
         className="stack"
         onSubmit={(e) => {
           e.preventDefault();
-          submit();
+          if (email.trim() && password) run(() => authApi.login(email.trim(), password));
         }}
       >
         {error && <ErrorBanner message={error} />}
@@ -65,11 +102,21 @@ function LoginForm({ onAuthed }: { onAuthed: () => void }) {
         <Field label="Password" htmlFor="password">
           <Input id="password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </Field>
-        <div>
-          <Button variant="primary" onClick={submit} disabled={busy || !email.trim() || !password}>
+        <div className="auth-actions">
+          <Button
+            variant="primary"
+            onClick={() => run(() => authApi.login(email.trim(), password))}
+            disabled={busy || !email.trim() || !password}
+          >
             {busy ? "Signing in..." : "Sign in"}
           </Button>
+          <Button onClick={() => run(() => passkeyApi.login(email.trim()))} disabled={busy || !email.trim()}>
+            Use a passkey
+          </Button>
         </div>
+        <button type="button" className="auth-link" onClick={() => setMode("reset")}>
+          Forgot your password?
+        </button>
         <button type="submit" hidden />
       </form>
     </Shell>

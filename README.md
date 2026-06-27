@@ -61,17 +61,17 @@ There is nothing required - pasting a token is enough. The remaining knobs are a
 
 ## Admin sign-in
 
-Sign-in is built in: email + password (passkeys can be added too), handled by the Worker. Passwords are hashed with scrypt (`node:crypto`) and stored in D1; sessions are signed cookies (`jose` HS256) whose key lives in KV. The admin is protected while redirects stay public. No Cloudflare Access, no credit card.
+Sign-in is built in: email + password, plus optional **passkeys** (Touch ID / Windows Hello / phone) as an additional method. Handled entirely by the Worker - passwords hashed with scrypt (`node:crypto`) in D1, passkeys (WebAuthn) public keys in D1, sessions as signed cookies (`jose` HS256) whose key lives in KV. The admin is protected while redirects stay public. No Cloudflare Access, no credit card.
 
 **First admin (one of two ways):**
 - Set a `BOOTSTRAP_ADMIN_PASSWORD` secret at deploy -> sign in with `BOOTSTRAP_ADMIN_EMAIL` + that password (most secure; it's then hashed into D1).
 - Or leave it unset -> the app shows a one-time "create admin account" screen. If `BOOTSTRAP_ADMIN_EMAIL` is set it uses that; if not, you enter the admin email there too. Do this right after deploying.
 
-**Adding people:** on the **Team** page an admin adds someone by email and gets a one-time temporary password to hand over; they sign in and change it under **Account**. Roles are admin -> editor -> viewer.
+**Adding people:** on the **Team** page an admin adds someone by email and gets a one-time temporary password to hand over; they sign in and change it under **Account**. Each person can register their own passkeys under **Account**. Roles are admin -> editor -> viewer.
 
 **Forgot a password (no email is sent):**
-1. Another admin resets it on the **Team** page (one-time temporary password).
-2. (Coming with passkeys) sign in with a passkey, then change the password.
+1. **Reset it with a passkey** - on the sign-in page choose "Forgot your password?", confirm with a registered passkey, and set a new one.
+2. Or another admin resets it on the **Team** page (one-time temporary password).
 3. Last resort: the account owner clears the hash in Cloudflare's D1 console -
    `UPDATE users SET password_hash = NULL WHERE email = 'you@example.com';` - which re-shows the "create admin password" screen.
 
@@ -161,7 +161,7 @@ This keeps the data set low-risk, but it does not by itself make you compliant. 
 
 ## Tech stack
 
-Bun, React 19 + Wouter, Vite + `@cloudflare/vite-plugin`, Cloudflare Workers + D1 + KV, Drizzle ORM (+ drizzle-kit), oRPC (contract-first, end-to-end typed), zod, Radix UI, Recharts, `jose` for session cookies, and `node:crypto` scrypt for password hashing.
+Bun, React 19 + Wouter, Vite + `@cloudflare/vite-plugin`, Cloudflare Workers + D1 + KV, Drizzle ORM (+ drizzle-kit), oRPC (contract-first, end-to-end typed), zod, Radix UI, Recharts, `jose` for session cookies, `node:crypto` scrypt for password hashing, and `@simplewebauthn` for passkeys.
 
 A few decisions worth knowing:
 

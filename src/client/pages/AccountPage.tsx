@@ -1,3 +1,4 @@
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "../components/Button.tsx";
 import { Card } from "../components/Card.tsx";
@@ -6,7 +7,11 @@ import { ErrorBanner } from "../components/Feedback.tsx";
 import { Field } from "../components/Field.tsx";
 import { useToast } from "../components/Toast.tsx";
 import { authApi } from "../lib/authApi.ts";
+import { toMessage } from "../lib/errors.ts";
 import { useMe } from "../lib/me.tsx";
+import { useInvalidate } from "../lib/mutations.ts";
+import { passkeyApi } from "../lib/passkeyApi.ts";
+import { orpc } from "../orpc.ts";
 
 export function AccountPage() {
   const me = useMe();
@@ -70,6 +75,67 @@ export function AccountPage() {
           <button type="submit" hidden />
         </form>
       </Card>
+
+      <PasskeysCard />
     </div>
+  );
+}
+
+function PasskeysCard() {
+  const invalidate = useInvalidate();
+  const { notify } = useToast();
+  const passkeys = useQuery(orpc.passkeys.list.queryOptions());
+  const [adding, setAdding] = useState(false);
+
+  const remove = useMutation(
+    orpc.passkeys.delete.mutationOptions({
+      onSuccess: async () => {
+        await invalidate(orpc.passkeys.key());
+        notify("Passkey removed.");
+      },
+      onError: (err) => notify(toMessage(err), "error"),
+    }),
+  );
+
+  const add = async () => {
+    setAdding(true);
+    try {
+      await passkeyApi.register();
+      await invalidate(orpc.passkeys.key());
+      notify("Passkey added.");
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Could not add a passkey.", "error");
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  return (
+    <Card title="Passkeys">
+      <p className="muted">
+        Sign in with Touch ID, Windows Hello, or your phone instead of a password. You can also use a passkey to reset a
+        forgotten password.
+      </p>
+      {passkeys.data && passkeys.data.length > 0 && (
+        <div className="rows" style={{ marginTop: 12 }}>
+          {passkeys.data.map((p) => (
+            <div className="row" key={p.id}>
+              <div className="row__main">
+                <div className="row__title">{p.label || "Passkey"}</div>
+                <div className="row__sub">Added {new Date(p.createdAt).toLocaleDateString()}</div>
+              </div>
+              <Button size="sm" variant="danger" disabled={remove.isPending} onClick={() => remove.mutate({ id: p.id })}>
+                Remove
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ marginTop: 12 }}>
+        <Button variant="primary" disabled={adding} onClick={add}>
+          {adding ? "Waiting for your device..." : "Add a passkey"}
+        </Button>
+      </div>
+    </Card>
   );
 }

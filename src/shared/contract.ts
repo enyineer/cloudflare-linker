@@ -167,6 +167,8 @@ const CampaignDtoSchema = z.object({
 const UserDtoSchema = z.object({ email: z.string(), role: z.enum(USER_ROLES), createdAt: z.string() });
 const CreatedUserDtoSchema = UserDtoSchema.extend({ tempPassword: z.string() });
 const MeDtoSchema = z.object({ email: z.string(), role: z.enum(USER_ROLES) });
+const PasskeyDtoSchema = z.object({ id: z.string(), label: z.string().nullable(), createdAt: z.string() });
+export type PasskeyDto = z.infer<typeof PasskeyDtoSchema>;
 const AuditEntryDtoSchema = z.object({
   id: z.number(),
   ts: z.string(),
@@ -338,6 +340,10 @@ export const contract = {
     update: oc.input(userUpdateSchema).output(UserDtoSchema),
     delete: oc.input(z.object({ email: emailField })).output(z.void()),
     resetPassword: oc.input(z.object({ email: emailField })).output(z.object({ tempPassword: z.string() })),
+  },
+  passkeys: {
+    list: oc.output(z.array(PasskeyDtoSchema)),
+    delete: oc.input(z.object({ id: z.string().min(1) })).output(z.void()),
   },
   audit: {
     list: oc

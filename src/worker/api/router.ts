@@ -17,6 +17,7 @@ import {
   syncLinkRoute,
   teardownHostname,
 } from "../cloudflare.ts";
+import { deletePasskey, listPasskeys } from "../webauthn.ts";
 import {
   authed,
   badRequestError,
@@ -27,7 +28,7 @@ import {
   isUniqueViolation,
   notFoundError,
 } from "./orpc.ts";
-import { toAuditDto, toCampaignDto, toDomainDto, toLinkDto, toUserDto } from "./serializers.ts";
+import { toAuditDto, toCampaignDto, toDomainDto, toLinkDto, toPasskeyDto, toUserDto } from "./serializers.ts";
 
 const serverError = () => new ORPCError("INTERNAL_SERVER_ERROR");
 
@@ -275,6 +276,17 @@ export const router = base.router({
         .returning();
       if (!row) notFoundError("That team member could not be found.");
       return { tempPassword };
+    }),
+  },
+
+  passkeys: {
+    list: authed.passkeys.list.handler(async ({ context }) => {
+      const rows = await listPasskeys(context.env, context.user.email);
+      return rows.map(toPasskeyDto);
+    }),
+    delete: authed.passkeys.delete.handler(async ({ input, context }) => {
+      const ok = await deletePasskey(context.env, context.user.email, input.id);
+      if (!ok) notFoundError("That passkey could not be found.");
     }),
   },
 

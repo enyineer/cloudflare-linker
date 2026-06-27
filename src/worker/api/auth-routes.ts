@@ -2,10 +2,12 @@ import { eq, isNotNull } from "drizzle-orm";
 import { getDb } from "../../db/client.ts";
 import { ensureMigrated } from "../../db/migrate.ts";
 import { users } from "../../db/schema.ts";
+import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simplewebauthn/server";
 import { EMAIL_RE } from "../../shared/format.ts";
 import { recordAudit } from "../audit.ts";
 import { hashPassword, verifyPassword } from "../password.ts";
 import { issueSession, readSession, sessionClearCookie, sessionSetCookie } from "../session.ts";
+import { authenticationOptions, registrationOptions, verifyAuthentication, verifyRegistration } from "../webauthn.ts";
 
 /** Self-hosted auth endpoints (cookie-setting, so plain Worker routes rather than
  *  oRPC). Returns null for non-auth paths so the caller falls through to oRPC. */
@@ -25,6 +27,18 @@ export async function handleAuthRoutes(request: Request, url: URL, env: Env): Pr
       return setPassword(request, env);
     case "POST /api/auth/change-password":
       return changePassword(request, env);
+    case "POST /api/auth/passkey/register/options":
+      return passkeyRegisterOptions(request, env);
+    case "POST /api/auth/passkey/register":
+      return passkeyRegister(request, env);
+    case "POST /api/auth/passkey/login/options":
+      return passkeyAuthOptions(request, env, "login");
+    case "POST /api/auth/passkey/login":
+      return passkeyLogin(request, env);
+    case "POST /api/auth/passkey/reset/options":
+      return passkeyAuthOptions(request, env, "reset");
+    case "POST /api/auth/passkey/reset":
+      return passkeyReset(request, env);
     default:
       return jsonError(404, "Not found");
   }
@@ -121,6 +135,63 @@ async function changePassword(request: Request, env: Env): Promise<Response> {
   await db.update(users).set({ passwordHash: hash, passwordSetAt: new Date() }).where(eq(users.email, email));
   await recordAudit(env, email, "auth.change_password", "Changed password");
   return Response.json({ ok: true });
+}
+
+// ── passkeys (WebAuthn) ─────────────────────────────────────────────────────────
+
+async function passkeyRegisterOptions(request: Request, env: Env): Promise<Response> {
+  const email = await readSession(env, request);
+  if (!email) return jsonError(401, "Please sign in.");
+  return Response.json(await registrationOptions(env, request, email));
+}
+
+async function passkeyRegister(request: Request, env: Env): Promise<Response> {
+  const email = await readSession(env, request);
+  if (!email) return jsonError(401, "Please sign in.");
+  const body = await readJson(request);
+  // External boundary: the browser's attestation JSON; the library validates it.
+  const ok = await verifyRegistration(env, request, email, body.response as RegistrationResponseJSON);
+  if (!ok) return jsonError(400, "Could not register that passkey. Please try again.");
+  await recordAudit(env, email, "passkey.register", "Added a passkey");
+  return Response.json({ ok: true });
+}
+
+async function passkeyAuthOptions(request: Request, env: Env, purpose: "login" | "reset"): Promise<Response> {
+  const body = await readJson(request);
+  const email = String(body.email ?? "").trim().toLowerCase();
+  if (!email) return jsonError(400, "Enter your email.");
+  const options = await authenticationOptions(env, request, email, purpose);
+  if (!options) return jsonError(404, "No passkey is registered for that email.");
+  return Response.json(options);
+}
+
+async function passkeyLogin(request: Request, env: Env): Promise<Response> {
+  const body = await readJson(request);
+  const email = String(body.email ?? "").trim().toLowerCase();
+  if (!email) return jsonError(400, "Enter your email.");
+  if (await isRateLimited(env, email)) return jsonError(429, "Too many attempts. Please wait a few minutes.");
+  const verified = await verifyAuthentication(env, request, email, body.response as AuthenticationResponseJSON, "login");
+  if (!verified) {
+    await recordFailure(env, email);
+    return jsonError(401, "Passkey sign-in failed.");
+  }
+  await clearRateLimit(env, email);
+  await recordAudit(env, email, "passkey.login", "Signed in with a passkey");
+  return ok({ ok: true }, sessionSetCookie(await issueSession(env, email)));
+}
+
+async function passkeyReset(request: Request, env: Env): Promise<Response> {
+  const body = await readJson(request);
+  const email = String(body.email ?? "").trim().toLowerCase();
+  const newPassword = String(body.newPassword ?? "");
+  if (!email) return jsonError(400, "Enter your email.");
+  if (newPassword.length < MIN_PASSWORD) return jsonError(400, `Use at least ${MIN_PASSWORD} characters.`);
+  const verified = await verifyAuthentication(env, request, email, body.response as AuthenticationResponseJSON, "reset");
+  if (!verified) return jsonError(401, "Passkey check failed. Please try again.");
+  const hash = await hashPassword(newPassword);
+  await getDb(env).update(users).set({ passwordHash: hash, passwordSetAt: new Date() }).where(eq(users.email, email));
+  await recordAudit(env, email, "passkey.reset", "Reset password using a passkey");
+  return ok({ ok: true }, sessionSetCookie(await issueSession(env, email)));
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────

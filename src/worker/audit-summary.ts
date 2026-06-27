@@ -40,6 +40,8 @@ export function auditSummary(path: readonly string[], input: Record<string, unkn
       return `Selected Cloudflare account ${str(input.accountId)}`;
     case "setup.setupHostname":
       return `Set up ${str(input.hostname)} on Cloudflare`;
+    case "passkeys.delete":
+      return "Removed a passkey";
     default:
       return null;
   }
