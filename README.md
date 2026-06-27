@@ -6,6 +6,9 @@ A self-service link redirect and click-analytics tool that runs **entirely on Cl
 - **Campaigns**: group links and auto-fill UTM tags.
 - **Analytics**: clicks over time, top links/campaigns/sources/countries/devices/referrers, with per-link, per-campaign and per-web-address drill-downs and a date-range filter.
 - **GDPR-first logging**: anonymous aggregate clicks only. No IP, no full user-agent, no cookies (see [Privacy](#privacy--gdpr)).
+- **Built-in sign-in**: email + password, with optional passkeys (Touch ID / Windows Hello / phone). No external identity provider, no credit card.
+- **Hostname setup, automated**: connect a Cloudflare token and the app creates the DNS record + Worker route for a web address for you (with a confirm-first preview).
+- **Audit log**: every admin change and sign-in is recorded for abuse review (admins only).
 - **Simple admin UI**: plain language, role-based access, first-run guide.
 
 ---
@@ -17,45 +20,53 @@ A self-service link redirect and click-analytics tool that runs **entirely on Cl
 What the button does:
 
 1. Clones the repo into your Cloudflare account and builds it.
-2. **Auto-provisions the D1 database** - `wrangler.jsonc` deliberately omits `database_id`, so Cloudflare creates it for you (requires Wrangler 4.45+, which this project pins).
+2. **Auto-provisions the D1 database and the `SECRETS_KV` namespace** - `wrangler.jsonc` deliberately omits both the `database_id` and the KV `id`, so Cloudflare creates them for you (requires Wrangler 4.45+, which this project pins). `nodejs_compat` (needed for password hashing) is enabled in `wrangler.jsonc` and applied automatically.
 3. Deploys the Worker, which serves both the admin app and the redirects.
 
-After the first deploy you just **set your admin email** (and optionally a starting password); the app handles sign-in itself - no Cloudflare Access, no credit card. Database migrations apply themselves on the first request, so you never run a migration command.
+The deploy asks for **nothing** - there are no required fields. On your first visit you create the admin account (email + password) right in the app; sign-in is built in, with no Cloudflare Access and no credit card. Database migrations apply themselves on the first request, so you never run a migration command.
 
 Prefer the CLI? `bun install && bun run deploy`.
 
 ---
 
-## Required configuration
+## Optional configuration
 
-These are plain environment variables (not secrets). Set them in the Cloudflare dashboard under **Workers & Pages -> your Worker -> Settings -> Variables and Secrets**, or edit the `vars` block in `wrangler.jsonc` and redeploy.
-
-| Variable | Required | What it is |
-| --- | --- | --- |
-| `BOOTSTRAP_ADMIN_EMAIL` | Optional | The email of the first **admin**. If left blank, the one-time setup screen asks for it on first run. |
-| `BOOTSTRAP_ADMIN_PASSWORD` | Secret (optional) | An initial admin password set at deploy. If set, your first sign-in uses it (then it's stored hashed). If unset, the app shows a one-time "create admin password" screen for `BOOTSTRAP_ADMIN_EMAIL`. |
-| `ADMIN_HOSTNAME` | Optional | The admin app's hostname. Leave blank to auto-detect `*.workers.dev` and `localhost`. Set it if you serve the admin on a custom domain. |
-
-See [Admin sign-in](#admin-sign-in) below for how the first admin is created and how passwords are recovered.
-
-### Optional: Cloudflare connection (Setup page)
-
-If you connect a Cloudflare API token, the admin **Setup** page (admin only) runs read-only checks: is the token valid, which of your zones have a **wildcard route** to this Worker (catches the "wrong wildcard" / "no route" case), and what is each custom domain's status (zone on account / attached / certificate). The account and zones are read from the token - nothing to type. It stays hidden until configured, and the app works fine without it.
-
-**Connecting takes two clicks - no CLI required.** On the Setup page:
-
-1. Click **Create a read-only token** - it opens Cloudflare's token form with the needed scopes (`Zone:Read`, `Workers Routes:Read`, `Account Workers Scripts:Read`) pre-selected. Create it and copy it.
-2. **Paste it** into the Setup page and Save. The app verifies it with Cloudflare, then stores it **AES-GCM-encrypted in D1** (the key lives in an auto-provisioned `SECRETS_KV` namespace, so a database-only leak is not plaintext). No redeploy; rotating is just another paste.
-
-> Security note: the token is stored in the app's own (encrypted) database, so the app's code can read it. Use the **narrowest scope** possible (read-only for diagnostics). For maximum isolation you can instead set a deploy-time secret `wrangler secret put CLOUDFLARE_API_TOKEN`, which always takes precedence over the saved one.
-
-There is nothing required - pasting a token is enough. The remaining knobs are all optional overrides:
+Nothing is required - a fresh deploy works with no configuration. To preconfigure or override, set these in the dashboard under **Workers & Pages -> your Worker -> Settings -> Variables and Secrets** (or in `.dev.vars` for local dev). They are intentionally **not** declared in `wrangler.jsonc`, so the Deploy button doesn't turn them into mandatory fields.
 
 | Variable | Type | What it is |
 | --- | --- | --- |
-| `CLOUDFLARE_ACCOUNT_ID` | var (optional) | Override the account. Derived from the token, or chosen on the Setup page when the token can see several. |
-| `CLOUDFLARE_WORKER_NAME` | var | This Worker's script name (defaults to `cloudflare-linker`). A Worker can't read its own name at runtime, so this is a plain default. |
-| `CLOUDFLARE_API_TOKEN` | Secret (optional) | Alternative to pasting: set the token as a deploy-time secret. Takes precedence over the saved one. |
+| `BOOTSTRAP_ADMIN_EMAIL` | var | The first **admin**'s email. Blank -> the first-run screen asks for it. **Required if you set `BOOTSTRAP_ADMIN_PASSWORD`.** |
+| `BOOTSTRAP_ADMIN_PASSWORD` | secret | An initial admin password. If set, your first sign-in uses `BOOTSTRAP_ADMIN_EMAIL` + this (then it's hashed into D1). If unset, the app shows the one-time "create your admin account" screen. |
+| `ADMIN_HOSTNAME` | var | The admin app's hostname. Blank -> auto-detect `*.workers.dev` and `localhost`. Set it if you serve the admin on a custom domain. |
+
+See [Admin sign-in](#admin-sign-in) below for how the first admin is created and how passwords are recovered.
+
+### Optional: connect Cloudflare (Setup page)
+
+Connect a Cloudflare API token and the admin **Setup** page can both **check** your configuration (token valid, which zones route to this Worker, each custom domain's status) **and set up redirect hostnames for you** - creating the DNS record + Worker route so a web address starts working, with no dashboard digging. It's optional; the app works without it (you can wire routes by hand). Setup is always visible to admins - before a token is connected it shows a "Connect Cloudflare" prompt.
+
+**Connecting takes a paste - no CLI required.** On the Setup page:
+
+1. Click **Create a Cloudflare token** - it opens Cloudflare's token form with the needed scopes pre-selected: `Zone:Read`, `Workers Routes:Edit`, `DNS:Edit`, `Account Workers Scripts:Read`. (Edit on Routes + DNS so the app can create them for you.) Create it and copy it.
+2. **Paste it** into the Setup page and Save. The app verifies it, then stores it **AES-GCM-encrypted in D1** (the key lives in the auto-provisioned `SECRETS_KV` namespace, so a database-only leak isn't plaintext). No redeploy; rotating is just another paste. The account is read from the token (you pick one if it sees several); your zones are listed automatically.
+
+**Setting up a web address.** Add a web address (or press **Set up** on one) and the app shows a **plan and asks you to confirm** before changing anything, then picks the approach automatically:
+
+- **Whole address** - a hostname with no existing website gets a proxied placeholder DNS record + a `host/*` route (every path goes to your links).
+- **Specific links** - a hostname that already serves a website gets a route **per link path**, so the rest of the site is untouched; routes are added/removed automatically as you add/remove links.
+- **All subdomains (advanced)** - on the Setup page, "Catch-all subdomains" wires `*.zone` with one wildcard route (warned: it captures existing names like `www`/`mail` too).
+
+If the domain isn't on your Cloudflare account yet, the dialog links you to Cloudflare's **Add a site** wizard and tells you which apex to enter. Deleting a web address removes only the routes + placeholder DNS the app created - never your real records.
+
+> Security note: this token can edit DNS records and Worker routes on the zones you choose, and is stored in the app's (encrypted) database, so the app's code can read it. Scope it to the zone(s) you use and rotate it if exposed. For maximum isolation, set a deploy-time secret `wrangler secret put CLOUDFLARE_API_TOKEN`, which takes precedence over the pasted one. (A read-only token still powers the diagnostics but disables the in-app setup actions.)
+
+Optional overrides:
+
+| Variable | Type | What it is |
+| --- | --- | --- |
+| `CLOUDFLARE_ACCOUNT_ID` | var (optional) | Override the account. Derived from the token, or chosen on Setup when the token sees several. |
+| `CLOUDFLARE_WORKER_NAME` | var (optional) | This Worker's script name (defaults to `cloudflare-linker`). A Worker can't read its own name at runtime, so this is a plain default. |
+| `CLOUDFLARE_API_TOKEN` | secret (optional) | Set the token at deploy instead of pasting it. Takes precedence over the saved one. |
 
 ---
 
@@ -73,7 +84,7 @@ Sign-in is built in: email + password, plus optional **passkeys** (Touch ID / Wi
 1. **Reset it with a passkey** - on the sign-in page choose "Forgot your password?", confirm with a registered passkey, and set a new one.
 2. Or another admin resets it on the **Team** page (one-time temporary password).
 3. Last resort: the account owner clears the hash in Cloudflare's D1 console -
-   `UPDATE users SET password_hash = NULL WHERE email = 'you@example.com';` - which re-shows the "create admin password" screen.
+   `UPDATE users SET password_hash = NULL WHERE email = 'you@example.com';`. The "create your admin account" screen reappears only when **no** user still has a password and no `BOOTSTRAP_ADMIN_PASSWORD` is set; the account you recover this way is made an admin.
 
 Roles: **admin** (everything + team management), **editor** (manage links + campaigns), **viewer** (read-only).
 
@@ -81,19 +92,13 @@ Roles: **admin** (everything + team management), **editor** (manage links + camp
 
 ## Adding redirect hostnames
 
-### Subdomains (instant, recommended)
+In the admin, go to **Web addresses -> Add web address** and type any hostname - a subdomain (`go.example.com`) or a root domain (`example.com`). There's no type to choose; how it gets wired depends on whether Cloudflare is connected.
 
-If the app is deployed on a Cloudflare zone with a wildcard route, **any subdomain of that zone works with zero provisioning** - adding one is just a database write. In the admin, go to **Web addresses -> Add web address**, choose **Subdomain**, and it works immediately.
+**With Cloudflare connected** (a token saved on the Setup page): adding the address - or pressing **Set up** on it - provisions it for you (a proxied DNS record + a Worker route), after a confirm-first preview. A hostname that already serves a website is set up in "specific links" mode so the existing site keeps working; everything else routes the whole host. The Setup page can also catch **all** subdomains of a zone at once. See [connect Cloudflare](#optional-connect-cloudflare-setup-page).
 
-### Custom (external) domains (advanced, manual)
+**Without a Cloudflare connection**: the address is saved, but you wire it on Cloudflare yourself - add a Worker route (and a proxied DNS record) for the hostname in the dashboard under **Workers & Pages -> your Worker -> Settings -> Domains & Routes**. A zone-wide wildcard route (`*.your-zone/*`) makes every subdomain work with no per-address steps.
 
-Attaching an external root domain to a Worker requires a custom-domain binding on your Cloudflare account, which this app does not automate. When you add a domain of type **Custom**, it is stored as **Awaiting setup**. To finish it:
-
-1. Make sure the domain's zone is on your Cloudflare account.
-2. In the Cloudflare dashboard, go to **Workers & Pages -> your Worker -> Settings -> Domains & Routes -> Add -> Custom Domain**, and add the hostname. (Or run `bunx wrangler deployments` workflows / a route as documented by Cloudflare.)
-3. Once Cloudflare shows the custom domain as active, set the domain's status to **Active** in the admin.
-
-If you've connected the Cloudflare API (above), the **Setup** page shows each custom domain's live status (zone found, attached, certificate) so you can confirm the steps worked.
+Either way, once a hostname routes to the Worker its links resolve immediately - adding a link is then just a database write.
 
 ---
 
@@ -113,7 +118,7 @@ bun run db:seed               # optional: demo subdomain, campaign, links, and s
 bun run dev                   # http://localhost:5173
 ```
 
-On first run the app shows a "create admin password" screen for `BOOTSTRAP_ADMIN_EMAIL`; after that you sign in with email + password. To exercise a redirect locally, send a `Host` header:
+On first run the app shows a "create your admin account" screen (prefilled with `BOOTSTRAP_ADMIN_EMAIL` if set); after that you sign in with email + password. To exercise a redirect locally, send a `Host` header:
 
 ```bash
 curl -i -H "Host: demo.example.com" --max-redirs 0 http://localhost:5173/promo
@@ -131,6 +136,8 @@ curl -i -H "Host: demo.example.com" --max-redirs 0 http://localhost:5173/promo
 | `bun run db:generate` | Generate Drizzle SQL migrations from `src/db/schema.ts`. |
 | `bun run db:migrate` / `db:migrate:remote` | Apply migrations to local / remote D1. |
 | `bun run db:seed` | Seed demo data into the local D1. |
+| `bun run db:studio` | Open Drizzle Studio against the local D1. |
+| `bun run preview` | Preview the production build locally. |
 | `bun run cf-typegen` | Regenerate `worker-configuration.d.ts` after binding/var changes. |
 
 ---
@@ -173,8 +180,9 @@ A few decisions worth knowing:
 
 ```
 src/
-  shared/     contract (oRPC + zod), roles, types, formatting - imported by both sides
-  worker/     redirect engine, click logging, auth, analytics, and the oRPC API
+  shared/     contract (oRPC + zod), roles, types, formatting, Cloudflare token-link builder - imported by both sides
+  worker/     redirect engine, click logging, analytics; auth (passwords + sessions + passkeys);
+              audit log; Cloudflare setup (DNS/routes) + token encryption; oRPC API (worker/api/)
   db/         Drizzle schema, client, runtime migrator, seed
   client/     React SPA (pages, components, lib)
 drizzle/      generated SQL migrations

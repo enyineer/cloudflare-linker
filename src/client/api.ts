@@ -6,7 +6,7 @@ import { contract } from "../shared/contract.ts";
 /**
  * Typed admin API client. Typed PURELY from the shared contract - it never
  * imports Worker code, so the SPA bundle stays free of server/Env types.
- * Cloudflare Access injects the auth header automatically for same-origin calls.
+ * Auth rides the `cl_session` cookie, sent automatically on same-origin calls.
  */
 const link = new RPCLink({
   url: `${window.location.origin}/api`,

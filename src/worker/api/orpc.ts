@@ -5,7 +5,7 @@ import { recordAudit } from "../audit.ts";
 import { authenticate } from "../auth.ts";
 
 /** oRPC server foundation: implements the shared contract, injects per-request
- *  context, and authenticates via Cloudflare Access (mapping email -> role). */
+ *  context, and authenticates via the signed session cookie (mapping email -> role). */
 
 export interface InitialContext {
   env: Env;

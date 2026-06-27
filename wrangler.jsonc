@@ -35,28 +35,15 @@
     }
   ],
 
-  "vars": {
-    // The app's own admin hostname. Requests to this host (and to any
-    // *.workers.dev host or localhost) serve the admin SPA + API; every other
-    // host is treated as a redirect host looked up in the `domains` table.
-    // Leave blank to rely on the *.workers.dev / localhost detection.
-    "ADMIN_HOSTNAME": "",
-
-    // Admin sign-in is a self-hosted email + password (with optional passkeys).
-    // Optional: pre-set the first administrator's email. If left blank, the
-    // one-time "create admin account" screen on first run asks for the email too.
-    // A BOOTSTRAP_ADMIN_PASSWORD secret (if set) makes first login use it.
-    "BOOTSTRAP_ADMIN_EMAIL": "",
-
-    // Optional Cloudflare API integration (Setup page diagnostics + custom-domain
-    // automation). The operator pastes the token into the Setup page; it is
-    // verified, encrypted, and stored in D1 (key in SECRETS_KV). A deploy-time
-    // CLOUDFLARE_API_TOKEN secret, if set, takes precedence. Account id is
-    // derived from the token (chosen on the Setup page if there are several);
-    // zones are listed automatically. So the only optional knob here is:
-    "CLOUDFLARE_ACCOUNT_ID": "", // optional - derived from the token / chosen on the Setup page when blank
-    "CLOUDFLARE_WORKER_NAME": "cloudflare-linker" // this Worker's script name (matches `name` above)
-  },
+  // No `vars` block on purpose: every setting is OPTIONAL, and the "Deploy to
+  // Cloudflare" button turns each declared var into a required-looking field. So
+  // they are NOT declared here (they'd block a zero-config deploy). They are
+  // typed as optional in src/worker/cloudflare-env.d.ts and read defensively:
+  //   ADMIN_HOSTNAME           - blank -> auto-detect *.workers.dev / localhost
+  //   BOOTSTRAP_ADMIN_EMAIL    - blank -> the first-run screen asks for it
+  //   CLOUDFLARE_ACCOUNT_ID    - blank -> derived from the token (or chosen)
+  //   CLOUDFLARE_WORKER_NAME   - blank -> defaults to "cloudflare-linker"
+  // Set any of them later in the dashboard (Settings -> Variables) or .dev.vars.
 
   // KV namespace for the at-rest encryption key (the pasted Cloudflare token is
   // stored AES-GCM-encrypted in D1; the key lives here so a D1-only leak is not
