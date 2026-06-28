@@ -350,6 +350,7 @@ export const contract = {
     create: oc.input(linkCreateSchema).output(LinkDtoSchema),
     update: oc.input(linkUpdateSchema).output(LinkDtoSchema),
     delete: oc.input(z.object({ id })).output(z.void()),
+    clearClicks: oc.input(z.object({ id })).output(z.object({ deleted: z.number() })),
   },
   campaigns: {
     list: oc.output(z.array(CampaignDtoSchema)),

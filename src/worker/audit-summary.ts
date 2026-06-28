@@ -20,6 +20,8 @@ export function auditSummary(path: readonly string[], input: Record<string, unkn
       return `Updated link #${str(input.id)}`;
     case "links.delete":
       return `Deleted link #${str(input.id)}`;
+    case "links.clearClicks":
+      return `Cleared click history for link #${str(input.id)}`;
     case "campaigns.create":
       return `Created campaign ${str(input.name)}`;
     case "campaigns.update":

@@ -169,6 +169,15 @@ export const router = base.router({
       if (!row) notFoundError("That link could not be found.");
       await manageLinkRoute(context.env, row.domainId, row.path, "remove");
     }),
+    clearClicks: authed.links.clearClicks.handler(async ({ input, context }) => {
+      if (!can(context.user.role, "writeLinks")) forbid("You do not have permission to manage links.");
+      const db = getDb(context.env);
+      const [existing] = await db.select({ id: links.id }).from(links).where(eq(links.id, input.id)).limit(1);
+      if (!existing) notFoundError("That link could not be found.");
+      const deleted = await db.$count(clicks, eq(clicks.linkId, input.id));
+      await db.delete(clicks).where(eq(clicks.linkId, input.id));
+      return { deleted };
+    }),
   },
 
   campaigns: {
