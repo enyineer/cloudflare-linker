@@ -27,7 +27,7 @@ const BROWSER_UA_RE = /mozilla\/.*(chrome|crios|safari|firefox|fxios|edg|opr|sam
 const SCANNER_NAME_RE =
   /(^|\/)(wp-login\.php|wp-admin|wp-includes|wp-content|xmlrpc\.php|administrator|admin\.php|phpmyadmin|pma|mysql|cgi-bin|vendor|owa|autodiscover|boaform|hnap1|eval-stdin\.php|config\.json|credentials)(\/|$|\.)/i;
 const SCANNER_EXT_RE = /\.(env|git|sql|bak|old|backup|swp|tar|gz|tgz|zip|rar|ini|conf|cfg|pem|key|log|dump|asp|aspx|jsp)(\.[a-z0-9]+)?$/i;
-const NOISE_PATH_RE = /^\/(favicon\.ico|robots\.txt|sitemap\.xml|ads\.txt|browserconfig\.xml|apple-touch-icon[\w-]*\.png)$/i;
+const NOISE_PATH_RE = /^\/(favicon\.ico|robots\.txt|sitemap\.xml|ads\.txt|security\.txt|browserconfig\.xml|apple-touch-icon[\w-]*\.png)$/i;
 
 /**
  * Does this path look like a vulnerability scan or non-content crawler noise rather
@@ -38,8 +38,10 @@ const NOISE_PATH_RE = /^\/(favicon\.ico|robots\.txt|sitemap\.xml|ads\.txt|browse
 export function isScannerPath(path: string): boolean {
   const p = path.toLowerCase();
   if (p === "/") return false;
-  if (p.startsWith("/.well-known")) return false; // ACME challenges, security.txt, etc. are legit
-  if (/\/\.[a-z0-9]/.test(p)) return true; // any dotfile segment: /.env, /.git/config, /x/.aws
+  if (p.startsWith("/.well-known/acme-challenge/")) return false; // TLS cert validation only
+  // Everything else under /.well-known (security.txt, etc.) on a redirect host is a
+  // scanner probe, and is caught by the dotfile rule below.
+  if (/\/\.[a-z0-9]/.test(p)) return true; // dotfile segments: /.env, /.git/config, /.well-known/*
   return SCANNER_NAME_RE.test(p) || SCANNER_EXT_RE.test(p) || NOISE_PATH_RE.test(p);
 }
 

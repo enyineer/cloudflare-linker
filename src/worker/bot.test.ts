@@ -19,14 +19,16 @@ describe("isScannerPath", () => {
     expect(isScannerPath("/vendor/phpunit")).toBe(true);
   });
 
-  test("flags risky extensions + crawler noise", () => {
+  test("flags risky extensions + crawler noise + security.txt probes", () => {
     expect(isScannerPath("/backup.sql")).toBe(true);
     expect(isScannerPath("/site.tar.gz")).toBe(true);
     expect(isScannerPath("/favicon.ico")).toBe(true);
     expect(isScannerPath("/robots.txt")).toBe(true);
+    expect(isScannerPath("/security.txt")).toBe(true);
+    expect(isScannerPath("/.well-known/security.txt")).toBe(true);
   });
 
-  test("allows real links, the root, and /.well-known", () => {
+  test("allows real links, the root, and ACME challenges", () => {
     expect(isScannerPath("/")).toBe(false);
     expect(isScannerPath("/offer")).toBe(false);
     expect(isScannerPath("/auto-ankauf-2026")).toBe(false);

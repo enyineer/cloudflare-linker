@@ -19,7 +19,8 @@ export interface AppSettings {
   flagDatacenterTraffic: boolean;
   /** Trust request.cf.botManagement (only set this if you have paid Bot Management). */
   botManagementEnabled: boolean;
-  /** Log catch-all hits to unconfigured (non-scanner) paths. */
+  /** Log catch-all hits to unconfigured paths (off by default - only clicks on
+   *  links you created are counted, which keeps endless bot/scanner paths out). */
   logUnmatchedPaths: boolean;
   /** Cloudflare bot score (1 bot .. 99 human) at/below which a click counts as a bot. */
   botScoreThreshold: number;
@@ -36,7 +37,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   // and corporate humans aren't flagged - only non-browser datacenter requests.
   flagDatacenterTraffic: true,
   botManagementEnabled: false,
-  logUnmatchedPaths: true,
+  logUnmatchedPaths: false,
   botScoreThreshold: 30,
   botRetentionDays: 90,
 };

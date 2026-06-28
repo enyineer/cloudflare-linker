@@ -259,10 +259,18 @@ function AnalyticsFilteringCard() {
           <SettingRow
             id="set-block-scanners"
             label="Block common scanner paths"
-            hint="Requests to probes like /.env, /.git/config, /wp-login.php get a clean 404 instead of a logged redirect."
+            hint="Requests to probes like /.env, /.git/config, /wp-login.php, /security.txt get a clean 404 instead of a logged redirect."
             checked={s.blockScannerPaths}
             disabled={busy}
             onChange={(v) => update.mutate({ blockScannerPaths: v })}
+          />
+          <SettingRow
+            id="set-log-unmatched"
+            label="Count clicks on paths you didn't set up"
+            hint="Off by default - only clicks on links you created are counted. Bots and scanners hit endless random paths (/security.txt, /.env, ...) on your catch-all; leaving this off keeps them out of your stats for good. Turn on to also count visits to unconfigured paths."
+            checked={s.logUnmatchedPaths}
+            disabled={busy}
+            onChange={(v) => update.mutate({ logUnmatchedPaths: v })}
           />
           <SettingRow
             id="set-flag-datacenter"
