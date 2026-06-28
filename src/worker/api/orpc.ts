@@ -45,11 +45,7 @@ export function badRequestError(message: string): never {
   throw new ORPCError("BAD_REQUEST", { message });
 }
 
-/** SQLite/D1 unique-constraint violation detector. */
-export function isUniqueViolation(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
-  return /UNIQUE constraint failed/i.test(message);
-}
+export { isUniqueViolation } from "./sql-errors.ts";
 
 /** Drop undefined values so a partial update only sets the fields that were sent. */
 export function definedOnly<T extends object>(obj: T): Partial<T> {
