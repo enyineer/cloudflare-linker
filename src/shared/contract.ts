@@ -290,12 +290,13 @@ const CfDiagnosticsDtoSchema = z.object({
       z.object({ id: z.string(), zone: z.string(), ok: z.boolean(), routes: z.array(z.string()), message: z.string() }),
     ),
   }),
-  customDomains: z.array(
+  webAddresses: z.array(
     z.object({
       hostname: z.string(),
       zoneOnAccount: z.boolean(),
-      attached: z.boolean(),
-      certProvisioned: z.boolean(),
+      routed: z.boolean(),
+      proxied: z.boolean(),
+      routingMode: z.enum(ROUTING_MODES),
       message: z.string(),
     }),
   ),

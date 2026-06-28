@@ -2,9 +2,10 @@ import { eq } from "drizzle-orm";
 import { getDb } from "../db/client.ts";
 import { domains, links } from "../db/schema.ts";
 import type { CfDiagnosticsDto, EnableResultDto, SetupPlanDto } from "../shared/contract.ts";
+import type { RoutingMode } from "../shared/types.ts";
 import {
-  analyzeCustomDomain,
   analyzeRoutes,
+  analyzeWebAddress,
   findRouteByPattern,
   findSubdomainRoute,
   hostnameRoutePattern,
@@ -13,7 +14,6 @@ import {
   linkRoutePattern,
   zoneForHostname,
   type CfRoute,
-  type CfWorkerDomain,
   type CfZone,
 } from "./cloudflare-checks.ts";
 import { getSelectedAccount, setSelectedAccount } from "./setup-config.ts";
@@ -84,7 +84,7 @@ function baseDiagnostics(env: Env, source: TokenSource): CfDiagnosticsDto {
     token: { ok: false, message: "Cloudflare API is not connected." },
     account: { id: null, name: null, needsSelection: false, options: [], message: "" },
     routing: { checked: false, message: "Connect the Cloudflare API to check routing.", truncated: false, zones: [] },
-    customDomains: [],
+    webAddresses: [],
   };
 }
 
@@ -112,7 +112,10 @@ async function resolveAccount(
 }
 
 /** Read-only setup checks. Never throws - failures fold into the diagnostics. */
-export async function getDiagnostics(env: Env, customHostnames: string[]): Promise<CfDiagnosticsDto> {
+export async function getDiagnostics(
+  env: Env,
+  webAddresses: { hostname: string; routingMode: RoutingMode }[],
+): Promise<CfDiagnosticsDto> {
   const { token, source } = await resolveToken(env);
   const workerName = workerNameOf(env);
   if (!token) return baseDiagnostics(env, source);
@@ -146,12 +149,13 @@ export async function getDiagnostics(env: Env, customHostnames: string[]): Promi
     return {
       ...connected,
       routing: { checked: false, message: account.message || "Select an account to check routing.", truncated: false, zones: [] },
-      customDomains: [],
+      webAddresses: [],
     };
   }
 
   const zones = await fetchAccountZones(token, account.id);
   const toCheck = zones.slice(0, ZONE_CAP);
+  const routesByZone = new Map<string, CfRoute[]>();
   const zoneResults = await Promise.all(
     toCheck.map(async (z) => {
       let routes: CfRoute[] = [];
@@ -161,6 +165,7 @@ export async function getDiagnostics(env: Env, customHostnames: string[]): Promi
       } catch {
         /* leave empty -> "no routes" */
       }
+      routesByZone.set(z.id, routes);
       const analysis = analyzeRoutes(routes, workerName);
       return { id: z.id, zone: z.name, ok: analysis.ok, routes: analysis.routes, message: analysis.message };
     }),
@@ -179,16 +184,27 @@ export async function getDiagnostics(env: Env, customHostnames: string[]): Promi
     zones: zoneResults,
   };
 
-  let workerDomains: CfWorkerDomain[] = [];
-  try {
-    const resp = await cfGet<CfWorkerDomain[]>(token, `/accounts/${encodeURIComponent(account.id)}/workers/domains`);
-    workerDomains = resp.result ?? [];
-  } catch {
-    /* leave empty -> not attached */
-  }
-  const customDomains = customHostnames.map((h) => analyzeCustomDomain(h, zones, workerDomains, workerName));
+  const webAddressStatus = await Promise.all(
+    webAddresses.map(async (wa) => {
+      const zone = zoneForHostname(wa.hostname, zones);
+      const routes = zone ? routesByZone.get(zone.id) ?? [] : [];
+      const proxied = zone ? await isProxiedHost(token, zone.id, wa.hostname) : false;
+      return analyzeWebAddress(wa.hostname, wa.routingMode, zone, routes, proxied, workerName);
+    }),
+  );
 
-  return { ...connected, routing, customDomains };
+  return { ...connected, routing, webAddresses: webAddressStatus };
+}
+
+/** Is there a proxied DNS record for this exact hostname? */
+async function isProxiedHost(token: string, zoneId: string, hostname: string): Promise<boolean> {
+  try {
+    const query = new URLSearchParams({ "name.exact": hostname });
+    const list = await cfGet<DnsRecord[]>(token, `/zones/${zoneId}/dns_records?${query.toString()}`);
+    return (list.result ?? []).some((r) => r.proxied === true);
+  } catch {
+    return false;
+  }
 }
 
 /** Persist the operator's account choice (validated against the token's accounts). */

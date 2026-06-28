@@ -373,10 +373,10 @@ export const router = base.router({
     diagnostics: authed.setup.diagnostics.handler(async ({ context }) => {
       if (!can(context.user.role, "manageUsers")) forbid("Only administrators can view setup diagnostics.");
       const rows = await getDb(context.env)
-        .select({ hostname: domains.hostname })
+        .select({ hostname: domains.hostname, routingMode: domains.routingMode })
         .from(domains)
-        .where(eq(domains.kind, "custom"));
-      return getDiagnostics(context.env, rows.map((r) => r.hostname));
+        .orderBy(domains.hostname);
+      return getDiagnostics(context.env, rows);
     }),
     saveToken: authed.setup.saveToken.handler(async ({ input, context }) => {
       if (!can(context.user.role, "manageUsers")) forbid("Only administrators can manage the Cloudflare connection.");

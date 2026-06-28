@@ -31,7 +31,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   analyticsExcludeBots: true,
   blockScannerPaths: true,
   dropBotClicks: false,
-  flagDatacenterTraffic: false,
+  // On by default: safe now that it matches a curated hosting-ASN list AND spares
+  // clean browser traffic (real UA + Accept-Language), so VPN/WARP/Private Relay
+  // and corporate humans aren't flagged - only non-browser datacenter requests.
+  flagDatacenterTraffic: true,
   botManagementEnabled: false,
   logUnmatchedPaths: true,
   botScoreThreshold: 30,

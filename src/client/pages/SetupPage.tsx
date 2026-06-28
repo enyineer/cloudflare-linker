@@ -141,25 +141,34 @@ export function SetupPage() {
             )}
           </Card>
 
-          <Card title="Custom domains">
-            {diag.data.customDomains.length === 0 ? (
-              <p className="muted">No custom domains added yet.</p>
+          <Card title="Web address status">
+            <p className="muted">
+              How each of your web addresses is wired on Cloudflare: whether its domain is on this account, whether
+              traffic is routed to this app, and whether its DNS record is proxied.
+            </p>
+            {diag.data.webAddresses.length === 0 ? (
+              <p className="muted" style={{ marginTop: 12 }}>
+                No web addresses added yet.
+              </p>
             ) : (
-              <div className="rows">
-                {diag.data.customDomains.map((d) => (
-                  <div className="row" key={d.hostname}>
+              <div className="rows" style={{ marginTop: 12 }}>
+                {diag.data.webAddresses.map((w) => (
+                  <div className="row" key={w.hostname}>
                     <div className="row__main">
-                      <div className="row__title mono">{d.hostname}</div>
-                      <div className="row__sub">{d.message}</div>
+                      <div className="row__title mono">{w.hostname}</div>
+                      <div className="row__sub">{w.message}</div>
                     </div>
                     <div className="cluster">
-                      <Badge tone={d.zoneOnAccount ? "ok" : "muted"}>{d.zoneOnAccount ? "Zone found" : "No zone"}</Badge>
-                      <Badge tone={d.attached ? "ok" : "warn"}>{d.attached ? "Attached" : "Not attached"}</Badge>
-                      {d.attached && (
-                        <Badge tone={d.certProvisioned ? "ok" : "warn"}>
-                          {d.certProvisioned ? "Cert ready" : "Cert pending"}
-                        </Badge>
-                      )}
+                      <Badge tone={w.zoneOnAccount ? "ok" : "warn"}>
+                        {w.zoneOnAccount ? "On Cloudflare" : "Not on Cloudflare"}
+                      </Badge>
+                      <Badge tone={w.routed ? "ok" : "warn"}>{w.routed ? "Routed" : "Not routed"}</Badge>
+                      {w.routed &&
+                        (w.routingMode === "paths" ? (
+                          <Badge tone="muted">Specific links</Badge>
+                        ) : (
+                          <Badge tone={w.proxied ? "ok" : "warn"}>{w.proxied ? "Proxied" : "No DNS"}</Badge>
+                        ))}
                     </div>
                   </div>
                 ))}
@@ -258,7 +267,7 @@ function AnalyticsFilteringCard() {
           <SettingRow
             id="set-flag-datacenter"
             label="Treat datacenter traffic as bots"
-            hint="Flag clicks from known hosting networks (a maintained ASN list). Off by default; clean browser traffic via VPNs, Cloudflare WARP, or iCloud Private Relay is left alone, so this only catches non-browser datacenter requests."
+            hint="On by default. Flags clicks from known hosting networks (a maintained ASN list), but leaves clean browser traffic via VPNs, Cloudflare WARP, or iCloud Private Relay alone - so it only catches non-browser datacenter requests. Turn off if you expect legitimate automated traffic."
             checked={s.flagDatacenterTraffic}
             disabled={busy}
             onChange={(v) => update.mutate({ flagDatacenterTraffic: v })}

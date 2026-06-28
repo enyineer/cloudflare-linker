@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
-  analyzeCustomDomain,
   analyzeRoutes,
+  analyzeWebAddress,
   classifyHostname,
   findRouteByPattern,
   findSubdomainRoute,
@@ -12,6 +12,7 @@ import {
   isWildcard,
   subdomainRoutePattern,
   zoneForHostname,
+  type CfZone,
 } from "./cloudflare-checks.ts";
 
 const ZONES = [
@@ -108,18 +109,43 @@ describe("classifyHostname", () => {
   });
 });
 
-describe("analyzeCustomDomain", () => {
-  const domains = [{ hostname: "links.example.com", service: "cloudflare-linker", cert_id: "c1" }];
-  test("attached + cert", () => {
-    const r = analyzeCustomDomain("links.example.com", ZONES, domains, "cloudflare-linker");
-    expect(r).toMatchObject({ zoneOnAccount: true, attached: true, certProvisioned: true });
+describe("analyzeWebAddress", () => {
+  const zone: CfZone = { id: "z1", name: "example.com", status: "active" };
+  const w = "cloudflare-linker";
+
+  test("whole-host route + proxied -> routed", () => {
+    const routes = [{ pattern: "go.example.com/*", script: w }];
+    const r = analyzeWebAddress("go.example.com", "whole", zone, routes, true, w);
+    expect(r).toMatchObject({ zoneOnAccount: true, routed: true, proxied: true });
   });
-  test("zone present but not attached", () => {
-    const r = analyzeCustomDomain("new.example.com", ZONES, domains, "cloudflare-linker");
-    expect(r).toMatchObject({ zoneOnAccount: true, attached: false, certProvisioned: false });
+
+  test("zone wildcard covers a subdomain -> routed", () => {
+    const routes = [{ pattern: "*.example.com/*", script: w }];
+    const r = analyzeWebAddress("go.example.com", "whole", zone, routes, true, w);
+    expect(r.routed).toBe(true);
   });
+
+  test("paths mode: a per-link route counts as routed (no proxied DNS expected)", () => {
+    const routes = [{ pattern: "shop.example.com/promo", script: w }];
+    const r = analyzeWebAddress("shop.example.com", "paths", zone, routes, false, w);
+    expect(r.routed).toBe(true);
+    expect(r.message).toContain("Routed");
+  });
+
+  test("zone present but no route -> not routed", () => {
+    const r = analyzeWebAddress("go.example.com", "none", zone, [], false, w);
+    expect(r).toMatchObject({ zoneOnAccount: true, routed: false });
+  });
+
   test("zone not on account", () => {
-    const r = analyzeCustomDomain("links.other.com", ZONES, domains, "cloudflare-linker");
+    const r = analyzeWebAddress("go.other.com", "none", null, [], false, w);
     expect(r.zoneOnAccount).toBe(false);
+    expect(r.routed).toBe(false);
+  });
+
+  test("routed whole-host but missing proxied DNS -> flagged in message", () => {
+    const routes = [{ pattern: "go.example.com/*", script: w }];
+    const r = analyzeWebAddress("go.example.com", "whole", zone, routes, false, w);
+    expect(r.message).toContain("proxied DNS record is missing");
   });
 });

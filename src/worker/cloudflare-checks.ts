@@ -1,5 +1,7 @@
 /** Pure analysis of Cloudflare API payloads (no fetch, no Env) - unit-testable. */
 
+import type { RoutingMode } from "../shared/types.ts";
+
 export interface CfZone {
   id: string;
   name: string;
@@ -9,23 +11,18 @@ export interface CfRoute {
   pattern: string;
   script: string | null;
 }
-export interface CfWorkerDomain {
-  hostname: string;
-  service: string;
-  zone_id?: string;
-  cert_id?: string | null;
-}
 
 export interface RoutingResult {
   ok: boolean;
   routes: string[];
   message: string;
 }
-export interface CustomDomainResult {
+export interface WebAddressResult {
   hostname: string;
   zoneOnAccount: boolean;
-  attached: boolean;
-  certProvisioned: boolean;
+  routed: boolean;
+  proxied: boolean;
+  routingMode: RoutingMode;
   message: string;
 }
 
@@ -124,25 +121,33 @@ export function classifyHostname(
   return "needs_setup";
 }
 
-/** Status of a single custom domain against the account's zones + worker domains. */
-export function analyzeCustomDomain(
+/** Status of one web address against the account: is its zone here, is it routed
+ *  to this Worker (whole-host, zone wildcard, or per-link), and is it proxied. */
+export function analyzeWebAddress(
   hostname: string,
-  zones: CfZone[],
-  domains: CfWorkerDomain[],
+  routingMode: RoutingMode,
+  zone: CfZone | null,
+  routes: CfRoute[],
+  proxied: boolean,
   workerName: string,
-): CustomDomainResult {
-  const zoneOnAccount = zoneForHostname(hostname, zones) !== null;
-  const entry = domains.find(
-    (d) => d.hostname.toLowerCase() === hostname.toLowerCase() && d.service === workerName,
-  );
-  const attached = entry !== undefined;
-  const certProvisioned = Boolean(entry?.cert_id);
+): WebAddressResult {
+  const zoneOnAccount = zone !== null;
+  let routed = false;
+  if (zone) {
+    const state = classifyHostname(hostname, zone.name, routes, workerName);
+    const perLink = routes.some((r) => r.script === workerName && r.pattern.startsWith(`${hostname}/`));
+    routed = state !== "needs_setup" || perLink;
+  }
 
   let message: string;
-  if (!zoneOnAccount) message = "This domain's zone is not on your Cloudflare account. Add the zone there first.";
-  else if (!attached) message = "Zone found, but the domain is not attached to this Worker yet.";
-  else if (!certProvisioned) message = "Attached - the TLS certificate is still being provisioned.";
-  else message = "Attached and serving with a certificate.";
-
-  return { hostname, zoneOnAccount, attached, certProvisioned, message };
+  if (!zoneOnAccount) {
+    message = "Not on your Cloudflare account yet - add the domain to Cloudflare, then press Set up.";
+  } else if (!routed) {
+    message = "On Cloudflare, but not routed to this app yet - press Set up on the web address.";
+  } else if (!proxied && routingMode !== "paths") {
+    message = "Routed to this app, but its proxied DNS record is missing - re-run Set up.";
+  } else {
+    message = "Routed to this app through Cloudflare.";
+  }
+  return { hostname, zoneOnAccount, routed, proxied, routingMode, message };
 }
