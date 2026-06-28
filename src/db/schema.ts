@@ -106,11 +106,15 @@ export const clicks = sqliteTable(
     utmTerm: text("utm_term"),
     utmContent: text("utm_content"),
     redirectType: integer("redirect_type").$type<RedirectType>().notNull(),
+    // Heuristic bot/scanner flag (see worker/bot.ts). Excluded from analytics by
+    // default; kept (not dropped) so a misclassified human is recoverable.
+    isBot: integer("is_bot", { mode: "boolean" }).notNull().default(false),
   },
   (t) => [
     index("clicks_ts_idx").on(t.ts),
     index("clicks_link_idx").on(t.linkId),
     index("clicks_campaign_idx").on(t.campaignId),
+    index("clicks_bot_ts_idx").on(t.isBot, t.ts),
   ],
 );
 

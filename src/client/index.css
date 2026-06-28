@@ -98,6 +98,10 @@ a { color: var(--color-accent-strong); }
 .btn--block { display: flex; width: 100%; }
 .auth-actions { display: flex; gap: 10px; }
 .auth-actions > .btn { flex: 1; }
+.bot-toggle { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.bot-note { margin: -4px 0 0; font-size: 0.85rem; }
+.bullets { margin: 10px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+.bullets li { line-height: 1.5; }
 .auth-or {
   display: flex; align-items: center; gap: 10px; color: var(--color-text-muted); font-size: 0.8rem; margin: 2px 0;
 }

@@ -10,7 +10,7 @@ interface DecidableLink {
 }
 
 export type RedirectDecision<T extends DecidableLink> =
-  | { action: "redirect"; link: T }
+  | { action: "redirect"; link: T; viaCatchAll: boolean }
   | { action: "fallback"; link: T; url: string }
   | { action: "notfound" };
 
@@ -22,20 +22,25 @@ export type RedirectDecision<T extends DecidableLink> =
  *   - otherwise (unknown path, or disabled link with no fallback)
  *     -> the "/" default link acts as the host catch-all (if enabled)
  *   - nothing usable                 -> not found (clean 404)
+ * When `blockCatchAll` is true (a scanner/probe path), the catch-all is suppressed
+ * so the probe gets a clean 404 instead of a logged redirect. An explicit exact
+ * link always still wins.
  */
 export function decideRedirect<T extends DecidableLink>(
   requestPath: string,
   exactLink: T | undefined,
   rootLink: T | undefined,
+  blockCatchAll = false,
 ): RedirectDecision<T> {
   if (exactLink) {
-    if (exactLink.enabled) return { action: "redirect", link: exactLink };
+    if (exactLink.enabled) return { action: "redirect", link: exactLink, viaCatchAll: false };
     if (exactLink.fallbackUrl) return { action: "fallback", link: exactLink, url: exactLink.fallbackUrl };
     // disabled with no fallback -> fall through to the catch-all below
   }
 
   if (rootLink && rootLink.enabled && rootLink.path !== requestPath) {
-    return { action: "redirect", link: rootLink };
+    if (blockCatchAll) return { action: "notfound" };
+    return { action: "redirect", link: rootLink, viaCatchAll: true };
   }
 
   return { action: "notfound" };

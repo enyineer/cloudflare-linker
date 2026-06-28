@@ -15,7 +15,7 @@ const link = (path: string, enabled = true, fallbackUrl: string | null = null): 
 describe("decideRedirect", () => {
   test("exact enabled link redirects to itself", () => {
     const exact = link("/promo");
-    expect(decideRedirect("/promo", exact, link("/"))).toEqual({ action: "redirect", link: exact });
+    expect(decideRedirect("/promo", exact, link("/"))).toEqual({ action: "redirect", link: exact, viaCatchAll: false });
   });
 
   test("disabled exact link with fallback uses the fallback", () => {
@@ -32,12 +32,23 @@ describe("decideRedirect", () => {
     expect(decideRedirect("/promo", link("/promo", false), root)).toEqual({
       action: "redirect",
       link: root,
+      viaCatchAll: true,
     });
   });
 
   test("unknown path uses the / catch-all", () => {
     const root = link("/");
-    expect(decideRedirect("/unknown", undefined, root)).toEqual({ action: "redirect", link: root });
+    expect(decideRedirect("/unknown", undefined, root)).toEqual({ action: "redirect", link: root, viaCatchAll: true });
+  });
+
+  test("blockCatchAll suppresses the catch-all (scanner probe -> not found)", () => {
+    const root = link("/");
+    expect(decideRedirect("/.env", undefined, root, true)).toEqual({ action: "notfound" });
+  });
+
+  test("blockCatchAll never blocks an explicit exact link", () => {
+    const exact = link("/.env");
+    expect(decideRedirect("/.env", exact, link("/"), true)).toEqual({ action: "redirect", link: exact, viaCatchAll: false });
   });
 
   test("unknown path with no / link is not found", () => {

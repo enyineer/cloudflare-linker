@@ -21,8 +21,9 @@ export type Resolution =
       queryParams: QueryParam[];
       forwardQuery: boolean;
       campaign: CampaignUtm | null;
+      viaCatchAll: boolean;
     }
-  | { kind: "fallback"; status: 302; linkId: number; campaignId: number | null; url: string };
+  | { kind: "fallback"; status: 302; linkId: number; campaignId: number | null; url: string; viaCatchAll: boolean };
 
 // Tiny in-isolate cache for hot links. Hits only, short TTL, so admin edits go
 // live almost immediately; misses are never cached (new links work at once).
@@ -30,8 +31,8 @@ const CACHE_TTL_MS = 5_000;
 const CACHE_MAX_ENTRIES = 1_000;
 const resolveCache = new Map<string, { value: Resolution; expires: number }>();
 
-function cacheKey(hostname: string, path: string): string {
-  return `${hostname}\n${path}`;
+function cacheKey(hostname: string, path: string, blockCatchAll: boolean): string {
+  return `${hostname}\n${path}\n${blockCatchAll ? 1 : 0}`;
 }
 
 function readCache(key: string): Resolution | undefined {
@@ -49,9 +50,16 @@ function writeCache(key: string, value: Resolution): void {
   resolveCache.set(key, { value, expires: Date.now() + CACHE_TTL_MS });
 }
 
-/** Resolve (hostname, path) to a link config or null (clean 404). */
-export async function resolveRedirect(env: Env, hostname: string, path: string): Promise<Resolution | null> {
-  const key = cacheKey(hostname, path);
+/** Resolve (hostname, path) to a link config or null (clean 404). When
+ *  `blockCatchAll` is true, an unconfigured (scanner/probe) path resolves to null
+ *  instead of the host catch-all. */
+export async function resolveRedirect(
+  env: Env,
+  hostname: string,
+  path: string,
+  blockCatchAll = false,
+): Promise<Resolution | null> {
+  const key = cacheKey(hostname, path, blockCatchAll);
   const cached = readCache(key);
   if (cached) return cached;
 
@@ -74,13 +82,13 @@ export async function resolveRedirect(env: Env, hostname: string, path: string):
   const exactLink = rows.find((r) => r.path === path);
   const rootLink = rows.find((r) => r.path === "/");
 
-  const decision = decideRedirect<Link>(path, exactLink, rootLink);
+  const decision = decideRedirect<Link>(path, exactLink, rootLink, blockCatchAll);
   if (decision.action === "notfound") return null;
 
   const link = decision.link;
   let resolved: Resolution;
   if (decision.action === "fallback") {
-    resolved = { kind: "fallback", status: 302, linkId: link.id, campaignId: link.campaignId, url: decision.url };
+    resolved = { kind: "fallback", status: 302, linkId: link.id, campaignId: link.campaignId, url: decision.url, viaCatchAll: false };
   } else {
     resolved = {
       kind: "redirect",
@@ -91,6 +99,7 @@ export async function resolveRedirect(env: Env, hostname: string, path: string):
       queryParams: link.queryParams,
       forwardQuery: link.forwardQuery,
       campaign: await loadCampaign(env, link.campaignId),
+      viaCatchAll: decision.viaCatchAll,
     };
   }
 

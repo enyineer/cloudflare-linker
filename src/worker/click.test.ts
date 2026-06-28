@@ -62,6 +62,7 @@ describe("buildClickRecord (GDPR guarantees)", () => {
     country: "DE",
     region: "Bavaria",
     utm: { utmSource: "newsletter", utmMedium: "email", utmCampaign: "spring", utmTerm: null, utmContent: null },
+    isBot: false,
   });
 
   test("derives coarse, anonymous fields", () => {
@@ -79,6 +80,7 @@ describe("buildClickRecord (GDPR guarantees)", () => {
       utmMedium: "email",
       utmCampaign: "spring",
       redirectType: 302,
+      isBot: false,
     });
   });
 

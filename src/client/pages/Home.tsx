@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import { Badge } from "../components/Badge.tsx";
 import { BreakdownCard } from "../components/BreakdownCard.tsx";
@@ -10,6 +10,7 @@ import { EmptyState } from "../components/EmptyState.tsx";
 import { ErrorBanner, LoadingScreen } from "../components/Feedback.tsx";
 import { RangeTabs } from "../components/RangeTabs.tsx";
 import { Stat } from "../components/Stat.tsx";
+import { Switch } from "../components/Switch.tsx";
 import { toMessage } from "../lib/errors.ts";
 import { useMe } from "../lib/me.tsx";
 import { useDateRange } from "../lib/range.ts";
@@ -19,10 +20,16 @@ export function Home() {
   const me = useMe();
   const { days, setDays, range } = useDateRange(30);
 
+  const settings = useQuery(orpc.settings.get.queryOptions());
+  const [showBots, setShowBots] = useState<boolean | null>(null);
+  const includeBots = showBots ?? !(settings.data?.analyticsExcludeBots ?? true);
+
   const domains = useQuery(orpc.domains.list.queryOptions());
   const links = useQuery(orpc.links.list.queryOptions({ input: {} }));
   const campaigns = useQuery(orpc.campaigns.list.queryOptions());
-  const overview = useQuery(orpc.analytics.overview.queryOptions({ input: range, placeholderData: keepPreviousData }));
+  const overview = useQuery(
+    orpc.analytics.overview.queryOptions({ input: { ...range, includeBots }, placeholderData: keepPreviousData }),
+  );
 
   const linkIdByLabel = useMemo(() => {
     const hostById = new Map((domains.data ?? []).map((d) => [d.id, d.hostname]));
@@ -52,6 +59,10 @@ export function Home() {
           <p className="page__subtitle">How your links are performing.</p>
         </div>
         <div className="page__actions">
+          <label className="bot-toggle">
+            <Switch checked={includeBots} onCheckedChange={setShowBots} ariaLabel="Include bots in analytics" />
+            <span className="muted">Include bots</span>
+          </label>
           <RangeTabs days={days} onChange={setDays} />
         </div>
       </div>
@@ -66,6 +77,18 @@ export function Home() {
         <Stat label="Web addresses" value={domains.data.length} href="/domains" />
         <Stat label="Campaigns" value={campaigns.data.length} href="/campaigns" />
       </div>
+
+      {overview.data && overview.data.botClicks > 0 && (
+        <p className="muted bot-note">
+          {(() => {
+            const n = overview.data.botClicks;
+            const noun = n === 1 ? "click" : "clicks";
+            return includeBots
+              ? `Including ${n} bot ${noun} in this period.`
+              : `${n} bot ${noun} hidden in this period. Toggle "Include bots" to show them.`;
+          })()}
+        </p>
+      )}
 
       {overview.isPending || !overview.data ? (
         <LoadingScreen />

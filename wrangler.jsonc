@@ -9,6 +9,10 @@
   // node:crypto (scrypt) is used to hash admin passwords.
   "compatibility_flags": ["nodejs_compat"],
 
+  // Daily cron -> the Worker's scheduled() handler prunes bot clicks past the
+  // configured retention window (human clicks are kept). 04:00 UTC.
+  "triggers": { "crons": ["0 4 * * *"] },
+
   "assets": {
     // `directory` is intentionally OMITTED: @cloudflare/vite-plugin injects the
     // client build output (dist/client) automatically.

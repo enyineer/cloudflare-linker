@@ -17,6 +17,7 @@ import {
   syncLinkRoute,
   teardownHostname,
 } from "../cloudflare.ts";
+import { getSettings, updateSettings } from "../settings.ts";
 import { deletePasskey, listPasskeys } from "../webauthn.ts";
 import {
   authed,
@@ -301,19 +302,31 @@ export const router = base.router({
   analytics: {
     overview: authed.analytics.overview.handler(async ({ input, context }) => {
       const range = resolveRange(input.from, input.to, new Date());
-      return getOverview(context.env, range);
+      const includeBots = input.includeBots ?? !(await getSettings(context.env)).analyticsExcludeBots;
+      return getOverview(context.env, range, includeBots);
     }),
     link: authed.analytics.link.handler(async ({ input, context }) => {
       const range = resolveRange(input.from, input.to, new Date());
-      return getLinkStats(context.env, range, input.id);
+      const includeBots = input.includeBots ?? !(await getSettings(context.env)).analyticsExcludeBots;
+      return getLinkStats(context.env, range, input.id, includeBots);
     }),
     campaign: authed.analytics.campaign.handler(async ({ input, context }) => {
       const range = resolveRange(input.from, input.to, new Date());
-      return getCampaignStats(context.env, range, input.id);
+      const includeBots = input.includeBots ?? !(await getSettings(context.env)).analyticsExcludeBots;
+      return getCampaignStats(context.env, range, input.id, includeBots);
     }),
     domain: authed.analytics.domain.handler(async ({ input, context }) => {
       const range = resolveRange(input.from, input.to, new Date());
-      return getDomainStats(context.env, range, input.id);
+      const includeBots = input.includeBots ?? !(await getSettings(context.env)).analyticsExcludeBots;
+      return getDomainStats(context.env, range, input.id, includeBots);
+    }),
+  },
+
+  settings: {
+    get: authed.settings.get.handler(async ({ context }) => getSettings(context.env, true)),
+    update: authed.settings.update.handler(async ({ input, context }) => {
+      if (!can(context.user.role, "manageUsers")) forbid("Only administrators can change analytics settings.");
+      return updateSettings(context.env, input);
     }),
   },
 

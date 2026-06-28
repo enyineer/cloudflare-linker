@@ -186,13 +186,15 @@ const rangeSchema = z.object({ from: z.string(), to: z.string() });
 const seriesSchema = z.array(z.object({ date: z.string(), clicks: z.number() }));
 const breakdownSchema = z.array(z.object({ label: z.string(), clicks: z.number() }));
 
-export const overviewInputSchema = z.object({ from: dateField, to: dateField });
-export const statsInputSchema = z.object({ id, from: dateField, to: dateField });
+// `includeBots` overrides the global "hide bots" default for a single view.
+export const overviewInputSchema = z.object({ from: dateField, to: dateField, includeBots: z.boolean().optional() });
+export const statsInputSchema = z.object({ id, from: dateField, to: dateField, includeBots: z.boolean().optional() });
 
 const OverviewDtoSchema = z.object({
   range: rangeSchema,
   totalClicks: z.number(),
   previousClicks: z.number(),
+  botClicks: z.number(), // bot clicks in range (regardless of the includeBots filter)
   overTime: seriesSchema,
   byCampaign: breakdownSchema,
   topLinks: breakdownSchema,
@@ -243,6 +245,27 @@ export type LinkStatsDto = z.infer<typeof LinkStatsDtoSchema>;
 export type CampaignStatsDto = z.infer<typeof CampaignStatsDtoSchema>;
 export type DomainStatsDto = z.infer<typeof DomainStatsDtoSchema>;
 export type Breakdown = z.infer<typeof breakdownSchema>;
+
+// Analytics filtering + bot handling settings (global, admin-managed).
+const SettingsDtoSchema = z.object({
+  analyticsExcludeBots: z.boolean(),
+  blockScannerPaths: z.boolean(),
+  dropBotClicks: z.boolean(),
+  flagDatacenterTraffic: z.boolean(),
+  logUnmatchedPaths: z.boolean(),
+  botScoreThreshold: z.number(),
+  botRetentionDays: z.number(),
+});
+export type SettingsDto = z.infer<typeof SettingsDtoSchema>;
+const settingsUpdateSchema = z.object({
+  analyticsExcludeBots: z.boolean().optional(),
+  blockScannerPaths: z.boolean().optional(),
+  dropBotClicks: z.boolean().optional(),
+  flagDatacenterTraffic: z.boolean().optional(),
+  logUnmatchedPaths: z.boolean().optional(),
+  botScoreThreshold: z.number().int().min(1).max(99).optional(),
+  botRetentionDays: z.number().int().min(1).max(3650).optional(),
+});
 
 const CfDiagnosticsDtoSchema = z.object({
   configured: z.boolean(),
@@ -349,6 +372,10 @@ export const contract = {
     list: oc
       .input(z.object({ before: id.optional(), limit: z.number().int().min(1).max(200).optional() }))
       .output(z.array(AuditEntryDtoSchema)),
+  },
+  settings: {
+    get: oc.output(SettingsDtoSchema),
+    update: oc.input(settingsUpdateSchema).output(SettingsDtoSchema),
   },
   analytics: {
     overview: oc.input(overviewInputSchema).output(OverviewDtoSchema),

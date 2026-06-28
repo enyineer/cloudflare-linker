@@ -15,11 +15,14 @@ import { RPCHandler } from "@orpc/server/fetch";
 import { normalizeHostname, normalizePath } from "../shared/format.ts";
 import { handleAuthRoutes } from "./api/auth-routes.ts";
 import { router } from "./api/router.ts";
+import { classifyBot, isScannerPath } from "./bot.ts";
 import { buildClickRecord, extractUtm } from "./click.ts";
 import { insertClick } from "./click-log.ts";
 import { buildTarget, paramsFromSearch } from "./redirect.ts";
 import { resolveRedirect } from "./resolve.ts";
+import { purgeOldBotClicks } from "./retention.ts";
 import { isAdminHost } from "./routing.ts";
+import { getSettings } from "./settings.ts";
 
 const rpcHandler = new RPCHandler(router);
 
@@ -37,6 +40,16 @@ export default {
 
     return handleRedirect(request, url, hostname, env, ctx);
   },
+
+  // Daily cron: prune bot clicks past the retention window (see wrangler.jsonc triggers).
+  async scheduled(_controller, env, _ctx): Promise<void> {
+    try {
+      await ensureMigrated(env.DB);
+      await purgeOldBotClicks(env);
+    } catch (err) {
+      console.error("scheduled purge error:", err instanceof Error ? err.message : err);
+    }
+  },
 } satisfies ExportedHandler<Env>;
 
 // ── Redirect host ─────────────────────────────────────────────────────────────
@@ -51,8 +64,10 @@ async function handleRedirect(
   try {
     await ensureMigrated(env.DB);
     const path = normalizePath(url.pathname);
+    const settings = await getSettings(env);
+    const scannerProbe = isScannerPath(path);
 
-    const resolved = await resolveRedirect(env, hostname, path);
+    const resolved = await resolveRedirect(env, hostname, path, scannerProbe && settings.blockScannerPaths);
     if (!resolved) return notFound();
 
     let target: string;
@@ -66,6 +81,25 @@ async function handleRedirect(
     }
 
     const cf = request.cf;
+    // cf is the loose CfProperties union here, so narrow each field at runtime
+    // (botManagement is absent on the free plan; present only with Bot Management).
+    const bm = cf?.botManagement;
+    const botManagement =
+      bm && typeof bm === "object"
+        ? {
+            score: "score" in bm && typeof bm.score === "number" ? bm.score : undefined,
+            verifiedBot: "verifiedBot" in bm && typeof bm.verifiedBot === "boolean" ? bm.verifiedBot : undefined,
+          }
+        : null;
+    const isBot = classifyBot(
+      {
+        userAgent: request.headers.get("user-agent"),
+        botManagement,
+        asOrganization: typeof cf?.asOrganization === "string" ? cf.asOrganization : null,
+        scannerProbe,
+      },
+      { botScoreThreshold: settings.botScoreThreshold, flagDatacenterTraffic: settings.flagDatacenterTraffic },
+    );
     const record = buildClickRecord({
       linkId: resolved.linkId,
       campaignId: resolved.campaignId,
@@ -77,8 +111,11 @@ async function handleRedirect(
       country: typeof cf?.country === "string" ? cf.country : null,
       region: typeof cf?.region === "string" ? cf.region : null,
       utm: extractUtm(url.searchParams),
+      isBot,
     });
-    ctx.waitUntil(insertClick(env, record));
+    // Skip logging when configured to drop bots, or to not log catch-all misses.
+    const skipLog = (isBot && settings.dropBotClicks) || (resolved.viaCatchAll && !settings.logUnmatchedPaths);
+    if (!skipLog) ctx.waitUntil(insertClick(env, record));
 
     return Response.redirect(target, resolved.status);
   } catch (err) {

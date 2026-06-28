@@ -11,6 +11,7 @@ import { Input } from "../components/controls.tsx";
 import { EmptyState } from "../components/EmptyState.tsx";
 import { ErrorBanner, LoadingScreen } from "../components/Feedback.tsx";
 import { SetupConfirmDialog } from "../components/SetupConfirmDialog.tsx";
+import { Switch } from "../components/Switch.tsx";
 import { useToast } from "../components/Toast.tsx";
 import { toMessage } from "../lib/errors.ts";
 import { useMe } from "../lib/me.tsx";
@@ -173,8 +174,132 @@ export function SetupPage() {
           )}
         </>
       )}
+
+      <AnalyticsFilteringCard />
+      <BotMitigationCard />
+
       {setupHost !== null && <SetupConfirmDialog hostname={setupHost} onClose={() => setSetupHost(null)} />}
     </div>
+  );
+}
+
+function SettingRow({
+  id,
+  label,
+  hint,
+  checked,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  hint: string;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="row">
+      <div className="row__main">
+        <label className="row__title" htmlFor={id}>
+          {label}
+        </label>
+        <div className="row__sub">{hint}</div>
+      </div>
+      <Switch id={id} checked={checked} disabled={disabled} onCheckedChange={onChange} ariaLabel={label} />
+    </div>
+  );
+}
+
+function AnalyticsFilteringCard() {
+  const invalidate = useInvalidate();
+  const { notify } = useToast();
+  const settings = useQuery(orpc.settings.get.queryOptions());
+  const update = useMutation(
+    orpc.settings.update.mutationOptions({
+      onSuccess: async () => {
+        await invalidate(orpc.settings.key(), orpc.analytics.key());
+        notify("Settings saved.");
+      },
+      onError: (err) => notify(toMessage(err), "error"),
+    }),
+  );
+  const s = settings.data;
+  const busy = update.isPending;
+  return (
+    <Card title="Analytics filtering">
+      <p className="muted">
+        Bots and vulnerability scanners hit public addresses constantly. These controls keep that noise out of your
+        numbers. Cloudflare gives this app no per-request bot verdict on the free plan, so detection uses the
+        user-agent and request patterns.
+      </p>
+      {!s ? (
+        <p className="muted" style={{ marginTop: 12 }}>
+          Loading...
+        </p>
+      ) : (
+        <div className="rows" style={{ marginTop: 12 }}>
+          <SettingRow
+            id="set-exclude-bots"
+            label="Hide bots from analytics"
+            hint="Bot clicks are still recorded but left out of the charts by default."
+            checked={s.analyticsExcludeBots}
+            disabled={busy}
+            onChange={(v) => update.mutate({ analyticsExcludeBots: v })}
+          />
+          <SettingRow
+            id="set-block-scanners"
+            label="Block common scanner paths"
+            hint="Requests to probes like /.env, /.git/config, /wp-login.php get a clean 404 instead of a logged redirect."
+            checked={s.blockScannerPaths}
+            disabled={busy}
+            onChange={(v) => update.mutate({ blockScannerPaths: v })}
+          />
+          <SettingRow
+            id="set-flag-datacenter"
+            label="Treat datacenter traffic as bots"
+            hint="Flag clicks from hosting providers (AWS, Hetzner, ...). Off by default - VPNs and corporate proxies can be misflagged."
+            checked={s.flagDatacenterTraffic}
+            disabled={busy}
+            onChange={(v) => update.mutate({ flagDatacenterTraffic: v })}
+          />
+          <SettingRow
+            id="set-drop-bots"
+            label="Don't store bot clicks at all"
+            hint="Stronger, but you lose bot visibility and can't recover a click that was wrongly flagged."
+            checked={s.dropBotClicks}
+            disabled={busy}
+            onChange={(v) => update.mutate({ dropBotClicks: v })}
+          />
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function BotMitigationCard() {
+  return (
+    <Card title="Reduce bot traffic (optional)">
+      <p className="muted">
+        The filtering above keeps bots out of your stats. To stop them earlier - before they ever reach this app - turn
+        on Cloudflare's free protections in your dashboard:
+      </p>
+      <ul className="bullets">
+        <li>
+          <strong>Bot Fight Mode</strong>: Cloudflare dashboard &rarr; your domain &rarr; <em>Security &rarr; Bots</em> &rarr;
+          enable <em>Bot Fight Mode</em>. It challenges known bots for free (one toggle, no API token needed).
+        </li>
+        <li>
+          <strong>Block scanner paths at the edge</strong>: <em>Security &rarr; WAF &rarr; Custom rules</em> &rarr; create a
+          rule with <em>Block</em> when the URI path matches, e.g.{" "}
+          <code className="mono">(http.request.uri.path contains "/.") or (http.request.uri.path contains "/wp-")</code>.
+        </li>
+      </ul>
+      <p className="field__hint">
+        These run before the app, so blocked requests never cost a Worker request. The free plan allows 5 WAF custom
+        rules.
+      </p>
+    </Card>
   );
 }
 

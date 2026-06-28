@@ -42,6 +42,8 @@ export function auditSummary(path: readonly string[], input: Record<string, unkn
       return `Set up ${str(input.hostname)} on Cloudflare`;
     case "passkeys.delete":
       return "Removed a passkey";
+    case "settings.update":
+      return "Updated analytics filtering settings";
     default:
       return null;
   }

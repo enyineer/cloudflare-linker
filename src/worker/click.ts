@@ -87,6 +87,7 @@ export interface ClickInput {
   country: string | null;
   region: string | null;
   utm: Utm;
+  isBot: boolean;
 }
 
 /** Build the anonymous click row. Pure, so the "no PII" guarantee is testable. */
@@ -107,5 +108,6 @@ export function buildClickRecord(input: ClickInput): NewClick {
     utmTerm: input.utm.utmTerm,
     utmContent: input.utm.utmContent,
     redirectType: input.redirectType,
+    isBot: input.isBot,
   };
 }
