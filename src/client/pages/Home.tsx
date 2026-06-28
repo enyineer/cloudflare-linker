@@ -8,10 +8,13 @@ import { Card } from "../components/Card.tsx";
 import { ClicksOverTimeChart } from "../components/charts.tsx";
 import { EmptyState } from "../components/EmptyState.tsx";
 import { ErrorBanner, LoadingScreen } from "../components/Feedback.tsx";
+import { FilterBar } from "../components/FilterBar.tsx";
 import { RangeTabs } from "../components/RangeTabs.tsx";
 import { Stat } from "../components/Stat.tsx";
 import { Switch } from "../components/Switch.tsx";
+import type { FilterField } from "../../shared/types.ts";
 import { toMessage } from "../lib/errors.ts";
+import { useFilters } from "../lib/filters.ts";
 import { useMe } from "../lib/me.tsx";
 import { useDateRange } from "../lib/range.ts";
 import { orpc } from "../orpc.ts";
@@ -23,13 +26,16 @@ export function Home() {
   const settings = useQuery(orpc.settings.get.queryOptions());
   const [showBots, setShowBots] = useState<boolean | null>(null);
   const includeBots = showBots ?? !(settings.data?.analyticsExcludeBots ?? true);
+  const { active, filters, add, remove, clear } = useFilters();
+  const valuesFor = (f: FilterField) => active.filter((a) => a.field === f).map((a) => a.value);
 
   const domains = useQuery(orpc.domains.list.queryOptions());
   const links = useQuery(orpc.links.list.queryOptions({ input: {} }));
   const campaigns = useQuery(orpc.campaigns.list.queryOptions());
   const overview = useQuery(
-    orpc.analytics.overview.queryOptions({ input: { ...range, includeBots }, placeholderData: keepPreviousData }),
+    orpc.analytics.overview.queryOptions({ input: { ...range, includeBots, filters }, placeholderData: keepPreviousData }),
   );
+  const facets = useQuery(orpc.analytics.facets.queryOptions({ input: { scope: "overview", ...range, includeBots } }));
 
   const linkIdByLabel = useMemo(() => {
     const hostById = new Map((domains.data ?? []).map((d) => [d.id, d.hostname]));
@@ -67,6 +73,8 @@ export function Home() {
         </div>
       </div>
 
+      <FilterBar active={active} facets={facets.data} onAdd={add} onRemove={remove} onClear={clear} />
+
       <div className="summary-grid">
         <Stat
           label={`Clicks (last ${days} days)`}
@@ -98,8 +106,19 @@ export function Home() {
         <div className="card card--pad">
           <EmptyState
             icon="📊"
-            title="No clicks in this period yet"
-            text="Share your links and the clicks will show up here. Try a wider date range above."
+            title={active.length > 0 ? "No clicks match these filters" : "No clicks in this period yet"}
+            text={
+              active.length > 0
+                ? "Try removing a filter or widening the date range."
+                : "Share your links and the clicks will show up here. Try a wider date range above."
+            }
+            action={
+              active.length > 0 ? (
+                <Button variant="primary" onClick={clear}>
+                  Clear filters
+                </Button>
+              ) : undefined
+            }
           />
         </div>
       ) : (
@@ -109,21 +128,24 @@ export function Home() {
           </Card>
 
           <div className="two-col">
-            <BreakdownCard title="Clicks per campaign" data={overview.data.byCampaign} />
+            <BreakdownCard title="Clicks per campaign" data={overview.data.byCampaign} field="campaign" onPick={add} activeValues={valuesFor("campaign")} />
             <BreakdownCard
               title="Top sources"
               data={overview.data.topSources}
               empty="No incoming campaign tags (utm_source) seen yet."
+              field="source"
+              onPick={add}
+              activeValues={valuesFor("source")}
             />
           </div>
 
           <div className="two-col">
-            <BreakdownCard title="Devices" data={overview.data.byDevice} />
-            <BreakdownCard title="Top referrers" data={overview.data.topReferrers} empty="No referrers recorded." />
+            <BreakdownCard title="Devices" data={overview.data.byDevice} field="device" onPick={add} activeValues={valuesFor("device")} />
+            <BreakdownCard title="Top referrers" data={overview.data.topReferrers} empty="No referrers recorded." field="referrer" onPick={add} activeValues={valuesFor("referrer")} />
           </div>
 
           <div className="two-col">
-            <BreakdownCard title="Top countries" data={overview.data.topCountries} empty="No location data yet." />
+            <BreakdownCard title="Top countries" data={overview.data.topCountries} empty="No location data yet." field="country" onPick={add} activeValues={valuesFor("country")} />
             <Card title="Top links">
               <div className="rows">
                 {overview.data.topLinks.map((l) => {

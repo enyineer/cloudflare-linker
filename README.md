@@ -4,7 +4,7 @@ A self-service link redirect and click-analytics tool that runs **entirely on Cl
 
 - **Redirects**: any `(hostname, path)` to any target, with `301/302/307/308`, query-param appending, and per-link fallback.
 - **Campaigns**: group links and auto-fill UTM tags.
-- **Analytics**: clicks over time, top links/campaigns/sources/countries/devices/referrers, with per-link, per-campaign and per-web-address drill-downs and a date-range filter.
+- **Analytics**: clicks over time, top links/campaigns/sources/countries/devices/referrers, with per-link, per-campaign and per-web-address drill-downs, a date-range filter, and **multi-field filtering** - tap any value (e.g. a country) to narrow everything, combine several fields, or add one from the "Add filter" picker.
 - **GDPR-first logging**: anonymous aggregate clicks only. No IP, no full user-agent, no cookies (see [Privacy](#privacy--gdpr)).
 - **Built-in sign-in**: email + password, with optional passkeys (Touch ID / Windows Hello / phone). No external identity provider, no credit card.
 - **Hostname setup, automated**: connect a Cloudflare token and the app creates the DNS record + Worker route for a web address for you (with a confirm-first preview).

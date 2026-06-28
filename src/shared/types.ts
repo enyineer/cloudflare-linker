@@ -28,3 +28,67 @@ export interface QueryParam {
   key: string;
   value: string;
 }
+
+// ── analytics filters ───────────────────────────────────────────────────────────
+// Fields a click can be filtered by. Each maps to a clicks column server-side
+// (see worker/analytics.ts FIELD_COL). isBot is intentionally NOT here - it's
+// owned by the "Include bots" toggle.
+export const FILTER_FIELDS = [
+  "country",
+  "device",
+  "browser",
+  "source",
+  "referrer",
+  "campaign",
+  "region",
+  "medium",
+  "utmCampaign",
+  "term",
+  "content",
+  "hostname",
+  "path",
+  "redirectType",
+] as const;
+export type FilterField = (typeof FILTER_FIELDS)[number];
+
+/** Plain-English field labels for the UI. */
+export const FILTER_FIELD_LABELS: Record<FilterField, string> = {
+  country: "Country",
+  device: "Device",
+  browser: "Browser",
+  source: "Source",
+  referrer: "Referrer",
+  campaign: "Campaign",
+  region: "Region",
+  medium: "Medium",
+  utmCampaign: "Campaign tag",
+  term: "Term",
+  content: "Content",
+  hostname: "Web address",
+  path: "Path",
+  redirectType: "Redirect type",
+};
+
+// The fields surfaced first in the "Add filter" picker; the rest go under "More".
+export const COMMON_FILTER_FIELDS: readonly FilterField[] = [
+  "country",
+  "device",
+  "browser",
+  "source",
+  "referrer",
+  "campaign",
+];
+
+/** Friendly label for the "no value" option of a field (a NULL column). */
+export function filterNullLabel(field: FilterField): string {
+  if (field === "referrer") return "Direct / none";
+  if (field === "campaign") return "No campaign";
+  if (field === "country" || field === "region" || field === "browser") return "Unknown";
+  return "Not set";
+}
+
+/** Wire sentinel for "this field has no value" (maps to IS NULL server-side). */
+export const FILTER_NULL = "__none__";
+
+/** Numeric filter fields whose wire value is a stringified number. */
+export const NUMERIC_FILTER_FIELDS: readonly FilterField[] = ["campaign", "redirectType"];

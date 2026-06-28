@@ -5,7 +5,7 @@ import { campaigns, clicks, domains, links, users } from "../../db/schema.ts";
 import { generateTempPassword, hashPassword } from "../password.ts";
 import { SLUG_RE, slugify } from "../../shared/format.ts";
 import { can } from "../../shared/roles.ts";
-import { getCampaignStats, getDomainStats, getLinkStats, getOverview } from "../analytics.ts";
+import { getCampaignStats, getDomainStats, getFacets, getLinkStats, getOverview } from "../analytics.ts";
 import { listAudit } from "../audit.ts";
 import { resolveRange } from "../analytics-range.ts";
 import {
@@ -342,22 +342,27 @@ export const router = base.router({
     overview: authed.analytics.overview.handler(async ({ input, context }) => {
       const range = resolveRange(input.from, input.to, new Date());
       const includeBots = input.includeBots ?? !(await getSettings(context.env)).analyticsExcludeBots;
-      return getOverview(context.env, range, includeBots);
+      return getOverview(context.env, range, includeBots, input.filters);
     }),
     link: authed.analytics.link.handler(async ({ input, context }) => {
       const range = resolveRange(input.from, input.to, new Date());
       const includeBots = input.includeBots ?? !(await getSettings(context.env)).analyticsExcludeBots;
-      return getLinkStats(context.env, range, input.id, includeBots);
+      return getLinkStats(context.env, range, input.id, includeBots, input.filters);
     }),
     campaign: authed.analytics.campaign.handler(async ({ input, context }) => {
       const range = resolveRange(input.from, input.to, new Date());
       const includeBots = input.includeBots ?? !(await getSettings(context.env)).analyticsExcludeBots;
-      return getCampaignStats(context.env, range, input.id, includeBots);
+      return getCampaignStats(context.env, range, input.id, includeBots, input.filters);
     }),
     domain: authed.analytics.domain.handler(async ({ input, context }) => {
       const range = resolveRange(input.from, input.to, new Date());
       const includeBots = input.includeBots ?? !(await getSettings(context.env)).analyticsExcludeBots;
-      return getDomainStats(context.env, range, input.id, includeBots);
+      return getDomainStats(context.env, range, input.id, includeBots, input.filters);
+    }),
+    facets: authed.analytics.facets.handler(async ({ input, context }) => {
+      const range = resolveRange(input.from, input.to, new Date());
+      const includeBots = input.includeBots ?? !(await getSettings(context.env)).analyticsExcludeBots;
+      return getFacets(context.env, { scope: input.scope, id: input.id, includeBots }, range);
     }),
   },
 

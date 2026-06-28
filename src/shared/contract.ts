@@ -1,7 +1,7 @@
 import { oc } from "@orpc/contract";
 import { z } from "zod";
 import { EMAIL_RE, HOSTNAME_RE, PATH_RE, SLUG_RE, isHttpUrl, normalizePath } from "./format.ts";
-import { DOMAIN_KINDS, DOMAIN_STATUSES, REDIRECT_TYPES, ROUTING_MODES, USER_ROLES } from "./types.ts";
+import { DOMAIN_KINDS, DOMAIN_STATUSES, FILTER_FIELDS, REDIRECT_TYPES, ROUTING_MODES, USER_ROLES } from "./types.ts";
 
 /**
  * oRPC contract: the single source of truth for the admin API. Imported by BOTH
@@ -184,11 +184,47 @@ const dateField = z.string().regex(DATE_RE, "Use a date like 2026-01-31.").optio
 // Reusable analytics building blocks: a time series and a generic ranked breakdown.
 const rangeSchema = z.object({ from: z.string(), to: z.string() });
 const seriesSchema = z.array(z.object({ date: z.string(), clicks: z.number() }));
-const breakdownSchema = z.array(z.object({ label: z.string(), clicks: z.number() }));
+// `value` is the raw filter value for click-to-filter (sentinel for null); absent
+// when the row doesn't map to a single filterable field (e.g. Top links).
+const breakdownSchema = z.array(z.object({ label: z.string(), clicks: z.number(), value: z.string().optional() }));
 
-// `includeBots` overrides the global "hide bots" default for a single view.
-export const overviewInputSchema = z.object({ from: dateField, to: dateField, includeBots: z.boolean().optional() });
-export const statsInputSchema = z.object({ id, from: dateField, to: dateField, includeBots: z.boolean().optional() });
+// One analytics filter: a field plus one-or-more values (OR within the field).
+const clickFilterSchema = z.object({
+  field: z.enum(FILTER_FIELDS),
+  values: z.array(z.string().min(1).max(200)).min(1).max(50),
+});
+export type ClickFilter = z.infer<typeof clickFilterSchema>;
+const filtersField = z.array(clickFilterSchema).max(FILTER_FIELDS.length).optional();
+
+// `includeBots` overrides the global "hide bots" default for a single view; `filters`
+// narrows every breakdown + the trend (AND across fields, OR within a field).
+export const overviewInputSchema = z.object({
+  from: dateField,
+  to: dateField,
+  includeBots: z.boolean().optional(),
+  filters: filtersField,
+});
+export const statsInputSchema = z.object({
+  id,
+  from: dateField,
+  to: dateField,
+  includeBots: z.boolean().optional(),
+  filters: filtersField,
+});
+
+// Value pick-lists for the "Add filter" UI (real values that occurred, with counts).
+const facetsInputSchema = z.object({
+  scope: z.enum(["overview", "link", "campaign", "domain"]),
+  id: id.optional(),
+  from: dateField,
+  to: dateField,
+  includeBots: z.boolean().optional(),
+});
+const FacetValueSchema = z.object({ value: z.string(), label: z.string(), clicks: z.number() });
+const FacetsDtoSchema = z.object({
+  fields: z.array(z.object({ field: z.enum(FILTER_FIELDS), values: z.array(FacetValueSchema) })),
+});
+export type FacetsDto = z.infer<typeof FacetsDtoSchema>;
 
 const OverviewDtoSchema = z.object({
   range: rangeSchema,
@@ -387,6 +423,7 @@ export const contract = {
     link: oc.input(statsInputSchema).output(LinkStatsDtoSchema),
     campaign: oc.input(statsInputSchema).output(CampaignStatsDtoSchema),
     domain: oc.input(statsInputSchema).output(DomainStatsDtoSchema),
+    facets: oc.input(facetsInputSchema).output(FacetsDtoSchema),
   },
   setup: {
     diagnostics: oc.output(CfDiagnosticsDtoSchema),
