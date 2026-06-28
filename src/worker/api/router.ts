@@ -1,5 +1,5 @@
 import { ORPCError } from "@orpc/server";
-import { and, eq, type SQL } from "drizzle-orm";
+import { and, eq, or, type SQL } from "drizzle-orm";
 import { getDb } from "../../db/client.ts";
 import { campaigns, clicks, domains, links, users } from "../../db/schema.ts";
 import { generateTempPassword, hashPassword } from "../password.ts";
@@ -172,10 +172,29 @@ export const router = base.router({
     clearClicks: authed.links.clearClicks.handler(async ({ input, context }) => {
       if (!can(context.user.role, "writeLinks")) forbid("You do not have permission to manage links.");
       const db = getDb(context.env);
-      const [existing] = await db.select({ id: links.id }).from(links).where(eq(links.id, input.id)).limit(1);
-      if (!existing) notFoundError("That link could not be found.");
-      const deleted = await db.$count(clicks, eq(clicks.linkId, input.id));
-      await db.delete(clicks).where(eq(clicks.linkId, input.id));
+      const [link] = await db
+        .select({ path: links.path, domainId: links.domainId })
+        .from(links)
+        .where(eq(links.id, input.id))
+        .limit(1);
+      if (!link) notFoundError("That link could not be found.");
+      const [dom] = await db
+        .select({ hostname: domains.hostname })
+        .from(domains)
+        .where(eq(domains.id, link.domainId))
+        .limit(1);
+      // Delete clicks attributed to this link by id, AND any clicks recorded for the
+      // same hostname+path - which can be orphaned (link_id NULL) from an earlier
+      // link that was deleted/recreated, and which is how the dashboard's "Top links"
+      // groups them. Without this the link detail (by id) shows 0 while the homepage
+      // still counts the orphaned rows.
+      const byId = eq(clicks.linkId, input.id);
+      const where = dom
+        ? or(byId, and(eq(clicks.hostname, dom.hostname), eq(clicks.path, link.path)))
+        : byId;
+      if (!where) throw serverError();
+      const deleted = await db.$count(clicks, where);
+      await db.delete(clicks).where(where);
       return { deleted };
     }),
   },
