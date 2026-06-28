@@ -121,32 +121,44 @@ export function classifyHostname(
   return "needs_setup";
 }
 
-/** Status of one web address against the account: is its zone here, is it routed
- *  (whole-host, zone wildcard, or per-link route exists), and is it proxied.
- *  We match on route PATTERN, not script name: a Worker can't read its own name,
- *  so a name guess is unreliable. We also trust our own routingMode (set only when
- *  setup succeeded), so a missed/failed route fetch can't produce a false "not routed". */
+/**
+ * Status of one web address against the account: is its zone here, is it routed
+ * (whole-host, zone wildcard, or per-link route exists), and is it proxied.
+ *
+ * We match on route PATTERN, not script name (a Worker can't read its own name, so
+ * a name guess is unreliable). `routesKnown` says whether the live route list was
+ * actually fetched: when true the live routes are authoritative (so a route deleted
+ * on Cloudflare shows as drift even if our DB still says it's set up); when false
+ * (Cloudflare unreachable) we fall back to our own routingMode, clearly labeled.
+ */
 export function analyzeWebAddress(
   hostname: string,
   routingMode: RoutingMode,
   zone: CfZone | null,
   routes: CfRoute[],
+  routesKnown: boolean,
   proxied: boolean,
 ): WebAddressResult {
   const zoneOnAccount = zone !== null;
+  const setUp = routingMode !== "none";
   let liveRoute = false;
-  if (zone) {
+  if (zone && routesKnown) {
     liveRoute =
       routes.some((r) => r.pattern.startsWith(`${hostname}/`)) ||
       (!isApexHost(hostname, zone.name) && findSubdomainRoute(routes, zone.name) !== undefined);
   }
-  const routed = zoneOnAccount && (liveRoute || routingMode !== "none");
+  // Prefer the live truth; only fall back to our setup record if we couldn't check.
+  const routed = zoneOnAccount && (routesKnown ? liveRoute : setUp);
 
   let message: string;
   if (!zoneOnAccount) {
     message = "Not on your Cloudflare account yet - add the domain to Cloudflare, then press Set up.";
+  } else if (routesKnown && setUp && !liveRoute) {
+    message = "Was set up here, but its Cloudflare route is missing now - press Set up again to repair it.";
   } else if (!routed) {
     message = "On Cloudflare, but not routed to this app yet - press Set up on the web address.";
+  } else if (!routesKnown) {
+    message = "Set up in this app (could not re-check with Cloudflare just now).";
   } else if (!proxied && routingMode !== "paths") {
     message = "Routed to this app, but its proxied DNS record is missing - re-run Set up.";
   } else {

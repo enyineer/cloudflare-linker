@@ -155,17 +155,25 @@ export async function getDiagnostics(
 
   const zones = await fetchAccountZones(token, account.id);
   const toCheck = zones.slice(0, ZONE_CAP);
-  const routesByZone = new Map<string, CfRoute[]>();
+  // Per-zone routes + whether the fetch actually succeeded (so an empty list from a
+  // failed/uncovered fetch is distinguishable from a zone that genuinely has none).
+  const zoneRoutes = new Map<string, { routes: CfRoute[]; ok: boolean }>();
+  const fetchZoneRoutes = async (zoneId: string): Promise<{ routes: CfRoute[]; ok: boolean }> => {
+    const cached = zoneRoutes.get(zoneId);
+    if (cached) return cached;
+    let entry: { routes: CfRoute[]; ok: boolean };
+    try {
+      const resp = await cfGet<CfRoute[]>(token, `/zones/${zoneId}/workers/routes`);
+      entry = { routes: resp.result ?? [], ok: true };
+    } catch {
+      entry = { routes: [], ok: false };
+    }
+    zoneRoutes.set(zoneId, entry);
+    return entry;
+  };
   const zoneResults = await Promise.all(
     toCheck.map(async (z) => {
-      let routes: CfRoute[] = [];
-      try {
-        const resp = await cfGet<CfRoute[]>(token, `/zones/${z.id}/workers/routes`);
-        routes = resp.result ?? [];
-      } catch {
-        /* leave empty -> "no routes" */
-      }
-      routesByZone.set(z.id, routes);
+      const { routes } = await fetchZoneRoutes(z.id);
       const analysis = analyzeRoutes(routes, workerName);
       return { id: z.id, zone: z.name, ok: analysis.ok, routes: analysis.routes, message: analysis.message };
     }),
@@ -187,9 +195,11 @@ export async function getDiagnostics(
   const webAddressStatus = await Promise.all(
     webAddresses.map(async (wa) => {
       const zone = zoneForHostname(wa.hostname, zones);
-      const routes = zone ? routesByZone.get(zone.id) ?? [] : [];
+      // Fetch this address's own zone routes (reuses the cache, or fetches on demand
+      // for zones past the per-zone cap) so the live check is reliable, not capped.
+      const entry = zone ? await fetchZoneRoutes(zone.id) : { routes: [], ok: false };
       const proxied = zone ? await isProxiedHost(token, zone.id, wa.hostname) : false;
-      return analyzeWebAddress(wa.hostname, wa.routingMode, zone, routes, proxied);
+      return analyzeWebAddress(wa.hostname, wa.routingMode, zone, entry.routes, entry.ok, proxied);
     }),
   );
 
