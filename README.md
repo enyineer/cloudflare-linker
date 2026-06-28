@@ -87,7 +87,7 @@ Optional overrides:
 | Variable | Type | What it is |
 | --- | --- | --- |
 | `CLOUDFLARE_ACCOUNT_ID` | var (optional) | Override the account. Derived from the token, or chosen on Setup when the token sees several. |
-| `CLOUDFLARE_WORKER_NAME` | var (optional) | This Worker's script name (defaults to `cloudflare-linker`). A Worker can't read its own name at runtime, so this is a plain default. |
+| `CLOUDFLARE_WORKER_NAME` | var (optional) | This Worker's script name. Leave blank - the app auto-detects it from the Cloudflare API (a Worker can't read its own name at runtime) and caches it in D1, so it survives redeploys. Only set this to override the detection. |
 | `CLOUDFLARE_API_TOKEN` | secret (optional) | Set the token at deploy instead of pasting it. Takes precedence over the saved one. |
 
 ---

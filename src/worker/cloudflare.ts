@@ -16,7 +16,12 @@ import {
   type CfRoute,
   type CfZone,
 } from "./cloudflare-checks.ts";
-import { getSelectedAccount, setSelectedAccount } from "./setup-config.ts";
+import {
+  getSelectedAccount,
+  getStoredWorkerName,
+  setSelectedAccount,
+  setStoredWorkerName,
+} from "./setup-config.ts";
 import { readStoredToken, writeStoredToken } from "./token-store.ts";
 
 const ZONE_CAP = 25; // most accounts have few zones; cap the per-zone route checks
@@ -71,16 +76,106 @@ function canSaveToken(env: Env): boolean {
   return Boolean(env.SECRETS_KV);
 }
 
-function workerNameOf(env: Env): string {
-  return env.CLOUDFLARE_WORKER_NAME?.trim() || "cloudflare-linker";
+const WORKER_NAME_FALLBACK = "cloudflare-linker";
+
+interface WorkerNameSource {
+  token?: string | null;
+  accountId?: string | null;
+  host?: string;
 }
 
-function baseDiagnostics(env: Env, source: TokenSource): CfDiagnosticsDto {
+/**
+ * Discover this Worker's OWN script name. A Worker can't read its own name at
+ * runtime (verified - no binding/header/cf field exposes it), but the host it
+ * serves is a reliable lookup KEY in the API: workers.dev subdomain, a Custom
+ * Domain's `service`, or a route's `script`. `host` must be a hostname THIS Worker
+ * actually serves (e.g. the admin request host), not the target being set up.
+ */
+async function discoverWorkerName(token: string, accountId: string, host: string): Promise<string | null> {
+  try {
+    if (host.endsWith(".workers.dev")) {
+      const sub = await cfGet<{ subdomain?: string }>(token, `/accounts/${encodeURIComponent(accountId)}/workers/subdomain`);
+      const subdomain = sub.result?.subdomain;
+      if (subdomain) {
+        const suffix = `.${subdomain}.workers.dev`;
+        if (host.endsWith(suffix)) {
+          const label = host.slice(0, -suffix.length);
+          if (label && !label.includes(".")) return label;
+        }
+      }
+      const first = host.split(".")[0];
+      return first || null;
+    }
+    // A Custom Domain attached to this Worker carries the script name in `service`.
+    const domainsResp = await cfGet<{ hostname: string; service: string }[]>(
+      token,
+      `/accounts/${encodeURIComponent(accountId)}/workers/domains?hostname=${encodeURIComponent(host)}`,
+    );
+    const svc = domainsResp.result?.find((d) => d.hostname.toLowerCase() === host.toLowerCase())?.service;
+    if (svc) return svc;
+    // Otherwise a Worker route in the host's zone carries it in `script`.
+    const zones = await fetchAccountZones(token, accountId);
+    const zone = zoneForHostname(host, zones);
+    if (zone) {
+      const routes = (await cfGet<CfRoute[]>(token, `/zones/${zone.id}/workers/routes`)).result ?? [];
+      const match = routes.find(
+        (r) => r.pattern === host || r.pattern === hostnameRoutePattern(host) || r.pattern.startsWith(`${host}/`),
+      );
+      if (match?.script) return match.script;
+    }
+  } catch {
+    /* fall through - caller decides on the fallback */
+  }
+  return null;
+}
+
+/** Force a fresh discovery and update the D1 cache (used when the cached name turns
+ *  out to be stale, e.g. the Worker was renamed). */
+async function refreshWorkerName(env: Env, src: WorkerNameSource): Promise<string | null> {
+  if (!(src.token && src.accountId && src.host)) return null;
+  const name = await discoverWorkerName(src.token, src.accountId, src.host);
+  if (name) await setStoredWorkerName(env, name);
+  return name;
+}
+
+/** This Worker's script name. Precedence: explicit env var -> name cached in D1
+ *  (survives redeploys) -> discovered via the API and then cached -> fallback. */
+async function resolveWorkerName(env: Env, src: WorkerNameSource = {}): Promise<string> {
+  const fromEnv = env.CLOUDFLARE_WORKER_NAME?.trim();
+  if (fromEnv) return fromEnv;
+  const stored = await getStoredWorkerName(env);
+  if (stored) return stored;
+  return (await refreshWorkerName(env, src)) ?? WORKER_NAME_FALLBACK;
+}
+
+/** True when a route op failed because the script name doesn't exist (a stale/wrong
+ *  cached name) - the signal to re-discover and retry. */
+function isScriptMissing(r: { code?: StepCode; detail?: string }): boolean {
+  return r.code === "api_error" && /does not exist|not found|script_not_found/i.test(r.detail ?? "");
+}
+
+/** Create a route to this Worker, self-healing if the cached name is stale: on a
+ *  "script does not exist" failure, re-discover the real name and retry once. */
+async function ensureRouteHealing(
+  env: Env,
+  src: WorkerNameSource,
+  zoneId: string,
+  pattern: string,
+  name: string,
+): Promise<{ ok: boolean; state?: "created" | "exists" | "conflict"; code?: StepCode; detail?: string }> {
+  const r = await ensureRoute(src.token ?? "", zoneId, pattern, name);
+  if (r.ok || !isScriptMissing(r)) return r;
+  const fresh = await refreshWorkerName(env, src);
+  if (fresh && fresh !== name) return ensureRoute(src.token ?? "", zoneId, pattern, fresh);
+  return r;
+}
+
+function baseDiagnostics(env: Env, source: TokenSource, workerName: string): CfDiagnosticsDto {
   return {
     configured: false,
     canSaveToken: canSaveToken(env),
     tokenSource: source,
-    workerName: workerNameOf(env),
+    workerName,
     token: { ok: false, message: "Cloudflare API is not connected." },
     account: { id: null, name: null, needsSelection: false, options: [], message: "" },
     routing: { checked: false, message: "Connect the Cloudflare API to check routing.", truncated: false, zones: [] },
@@ -115,10 +210,10 @@ async function resolveAccount(
 export async function getDiagnostics(
   env: Env,
   webAddresses: { hostname: string; routingMode: RoutingMode }[],
+  requestHostname?: string,
 ): Promise<CfDiagnosticsDto> {
   const { token, source } = await resolveToken(env);
-  const workerName = workerNameOf(env);
-  if (!token) return baseDiagnostics(env, source);
+  if (!token) return baseDiagnostics(env, source, await resolveWorkerName(env));
 
   let tokenOk = false;
   let tokenMessage: string;
@@ -132,10 +227,11 @@ export async function getDiagnostics(
     tokenMessage = "Could not reach the Cloudflare API.";
   }
   if (!tokenOk) {
-    return { ...baseDiagnostics(env, source), configured: true, token: { ok: false, message: tokenMessage } };
+    return { ...baseDiagnostics(env, source, await resolveWorkerName(env)), configured: true, token: { ok: false, message: tokenMessage } };
   }
 
   const account = await resolveAccount(env, token);
+  const workerName = await resolveWorkerName(env, { token, accountId: account.id, host: requestHostname });
   const connected = {
     configured: true,
     canSaveToken: canSaveToken(env),
@@ -372,7 +468,7 @@ function routeErrorMessage(detail?: string): string {
 
 /** Read-only: compute exactly what setupHostname would change, for confirmation.
  *  Makes no changes. */
-export async function previewHostname(env: Env, hostname: string): Promise<SetupPlanDto> {
+export async function previewHostname(env: Env, hostname: string, requestHostname?: string): Promise<SetupPlanDto> {
   const plan = (extra: Partial<SetupPlanDto>): SetupPlanDto => ({
     ok: true,
     code: "ok",
@@ -401,9 +497,15 @@ export async function previewHostname(env: Env, hostname: string): Promise<Setup
   } catch {
     return fail("api_error", "Could not reach Cloudflare just now. Please try again in a moment.");
   }
-  const workerName = workerNameOf(env);
+  let workerName = await resolveWorkerName(env, { token, accountId: account.id, host: requestHostname });
 
   const own = findRouteByPattern(routes, hostnameRoutePattern(hostname));
+  // A route for this host pointing at a different script may mean our cached name
+  // is stale (Worker renamed) - re-discover before deciding it's a conflict.
+  if (own && own.script !== workerName) {
+    const fresh = await refreshWorkerName(env, { token, accountId: account.id, host: requestHostname });
+    if (fresh) workerName = fresh;
+  }
   if (own) {
     if (own.script !== workerName) return fail("route_conflict", `Another app already handles ${hostname}.`);
     return plan({ mode: "whole", alreadyDone: true, message: `${hostname} is already set up - nothing to change.` });
@@ -444,7 +546,7 @@ export async function previewHostname(env: Env, hostname: string): Promise<Setup
 /** Wire a single hostname to this Worker. Picks the strategy automatically:
  *  a hostname with an existing website -> per-link path routes (coexist);
  *  otherwise -> whole-host catch-all + proxied placeholder. Idempotent. */
-export async function setupHostname(env: Env, hostname: string): Promise<EnableResultDto> {
+export async function setupHostname(env: Env, hostname: string, requestHostname?: string): Promise<EnableResultDto> {
   const out = (
     ok: boolean,
     code: EnableResultDto["code"],
@@ -463,8 +565,8 @@ export async function setupHostname(env: Env, hostname: string): Promise<EnableR
     return out(false, "zone_inactive", `${zone.name} is not finished connecting to Cloudflare yet. Make sure it shows as Active in Cloudflare, then try again.`);
   }
 
-  const workerName = workerNameOf(env);
   const tlsNote = tlsNoteFor(zone.name);
+  const nameSrc = { token, accountId: account.id, host: requestHostname };
 
   let routes: CfRoute[];
   try {
@@ -473,10 +575,17 @@ export async function setupHostname(env: Env, hostname: string): Promise<EnableR
     return out(false, "api_error", "Could not reach Cloudflare just now. Please try again in a moment.");
   }
 
+  let workerName = await resolveWorkerName(env, nameSrc);
   const conflictMsg = `Another app already handles ${hostname}. Remove that route in Cloudflare first - we will not overwrite it.`;
 
   // Already wired for the whole host? Make sure the DNS placeholder exists too.
   const own = findRouteByPattern(routes, hostnameRoutePattern(hostname));
+  // A route pointing at a different script may mean our cached name is stale
+  // (Worker renamed) - re-discover before deciding it's a conflict.
+  if (own && own.script !== workerName) {
+    const fresh = await refreshWorkerName(env, nameSrc);
+    if (fresh) workerName = fresh;
+  }
   if (own) {
     if (own.script !== workerName) return out(false, "route_conflict", conflictMsg, { mode: "whole" });
     const rec = await ensureProxiedRecord(token, zone.id, hostname);
@@ -494,7 +603,7 @@ export async function setupHostname(env: Env, hostname: string): Promise<EnableR
   if (await hasExistingSite(token, zone.id, hostname)) {
     const paths = await linkPathsFor(env, hostname);
     for (const path of paths) {
-      const r = await ensureRoute(token, zone.id, linkRoutePattern(hostname, path), workerName);
+      const r = await ensureRouteHealing(env, nameSrc, zone.id, linkRoutePattern(hostname, path), workerName);
       if (r.code === "no_permission") return out(false, "no_permission", NO_PERMISSION_MESSAGE, { mode: "paths" });
       if (r.code === "api_error") return out(false, "api_error", routeErrorMessage(r.detail), { mode: "paths", tlsNote });
     }
@@ -507,7 +616,7 @@ export async function setupHostname(env: Env, hostname: string): Promise<EnableR
 
   // Dedicated host -> whole-host catch-all. Create the ROUTE FIRST so a failure
   // (e.g. the Worker is not deployed yet) does not leave an orphan DNS record.
-  const route = await ensureRoute(token, zone.id, hostnameRoutePattern(hostname), workerName);
+  const route = await ensureRouteHealing(env, nameSrc, zone.id, hostnameRoutePattern(hostname), workerName);
   if (!route.ok) {
     if (route.code === "route_conflict") return out(false, "route_conflict", conflictMsg, { mode: "whole", tlsNote });
     if (route.code === "no_permission") return out(false, "no_permission", NO_PERMISSION_MESSAGE, { mode: "whole" });
@@ -530,7 +639,11 @@ export async function syncLinkRoute(env: Env, hostname: string, path: string, ac
   const zone = zoneForHostname(hostname, zones);
   if (!zone || zone.status !== "active") return false;
   const pattern = linkRoutePattern(hostname, path);
-  if (action === "add") return (await ensureRoute(token, zone.id, pattern, workerNameOf(env))).ok;
+  if (action === "add") {
+    const src = { token, accountId: account.id, host: hostname };
+    const name = await resolveWorkerName(env, src);
+    return (await ensureRouteHealing(env, src, zone.id, pattern, name)).ok;
+  }
   return deleteRoute(token, zone.id, pattern);
 }
 
@@ -545,7 +658,7 @@ export async function teardownHostname(env: Env, hostname: string): Promise<void
   const zones = await fetchAccountZones(token, account.id);
   const zone = zoneForHostname(hostname, zones);
   if (!zone) return;
-  const workerName = workerNameOf(env);
+  const workerName = await resolveWorkerName(env, { token, accountId: account.id, host: hostname });
   try {
     const routes = (await cfGet<CfRouteFull[]>(token, `/zones/${zone.id}/workers/routes`)).result ?? [];
     for (const r of routes) {

@@ -46,7 +46,7 @@
   //   ADMIN_HOSTNAME           - blank -> auto-detect *.workers.dev / localhost
   //   BOOTSTRAP_ADMIN_EMAIL    - blank -> the first-run screen asks for it
   //   CLOUDFLARE_ACCOUNT_ID    - blank -> derived from the token (or chosen)
-  //   CLOUDFLARE_WORKER_NAME   - blank -> defaults to "cloudflare-linker"
+  //   CLOUDFLARE_WORKER_NAME   - blank -> auto-detected via the API and cached in D1
   // Set any of them later in the dashboard (Settings -> Variables) or .dev.vars.
 
   // KV namespace for the at-rest encryption key (the pasted Cloudflare token is

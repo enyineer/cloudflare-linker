@@ -381,7 +381,7 @@ export const router = base.router({
         .select({ hostname: domains.hostname, routingMode: domains.routingMode })
         .from(domains)
         .orderBy(domains.hostname);
-      return getDiagnostics(context.env, rows);
+      return getDiagnostics(context.env, rows, new URL(context.request.url).hostname);
     }),
     saveToken: authed.setup.saveToken.handler(async ({ input, context }) => {
       if (!can(context.user.role, "manageUsers")) forbid("Only administrators can manage the Cloudflare connection.");
@@ -393,11 +393,11 @@ export const router = base.router({
     }),
     previewHostname: authed.setup.previewHostname.handler(async ({ input, context }) => {
       if (!can(context.user.role, "writeDomains")) forbid("You do not have permission to set up web addresses.");
-      return previewHostname(context.env, input.hostname);
+      return previewHostname(context.env, input.hostname, new URL(context.request.url).hostname);
     }),
     setupHostname: authed.setup.setupHostname.handler(async ({ input, context }) => {
       if (!can(context.user.role, "writeDomains")) forbid("You do not have permission to set up web addresses.");
-      const result = await setupHostname(context.env, input.hostname);
+      const result = await setupHostname(context.env, input.hostname, new URL(context.request.url).hostname);
       if (result.ok && result.mode) {
         await getDb(context.env)
           .update(domains)

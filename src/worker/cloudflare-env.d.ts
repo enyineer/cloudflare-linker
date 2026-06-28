@@ -7,7 +7,7 @@ interface Env {
   ADMIN_HOSTNAME?: string; // blank -> auto-detect *.workers.dev / localhost
   BOOTSTRAP_ADMIN_EMAIL?: string; // blank -> the first-run screen asks for it
   CLOUDFLARE_ACCOUNT_ID?: string; // blank -> derived from the token / chosen on Setup
-  CLOUDFLARE_WORKER_NAME?: string; // blank -> defaults to "cloudflare-linker"
+  CLOUDFLARE_WORKER_NAME?: string; // blank -> auto-detected via the API + cached in D1
   // A Cloudflare API token set as a deploy-time secret. Highest-precedence token
   // source (otherwise the token pasted into the Setup page, stored in D1, is used).
   CLOUDFLARE_API_TOKEN?: string;
