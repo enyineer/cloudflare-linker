@@ -98,6 +98,17 @@ export const router = base.router({
       // Best-effort: remove the Cloudflare routes + placeholder DNS we created for it.
       await teardownHostname(context.env, row.hostname).catch(() => {});
     }),
+    clearClicks: authed.domains.clearClicks.handler(async ({ input, context }) => {
+      if (!can(context.user.role, "writeDomains")) forbid("Only administrators can clear a web address's history.");
+      const db = getDb(context.env);
+      const [domain] = await db.select({ hostname: domains.hostname }).from(domains).where(eq(domains.id, input.id)).limit(1);
+      if (!domain) notFoundError("That web address could not be found.");
+      // Delete ALL clicks for this hostname - every path, every link, including
+      // catch-all/scanner hits and orphaned rows that belong to no current link.
+      const deleted = await db.$count(clicks, eq(clicks.hostname, domain.hostname));
+      await db.delete(clicks).where(eq(clicks.hostname, domain.hostname));
+      return { deleted };
+    }),
   },
 
   links: {

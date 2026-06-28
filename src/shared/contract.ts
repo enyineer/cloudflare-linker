@@ -346,6 +346,7 @@ export const contract = {
     create: oc.input(domainCreateSchema).output(DomainDtoSchema),
     update: oc.input(domainUpdateSchema).output(DomainDtoSchema),
     delete: oc.input(z.object({ id })).output(z.void()),
+    clearClicks: oc.input(z.object({ id })).output(z.object({ deleted: z.number() })),
   },
   links: {
     list: oc.input(linkListSchema).output(z.array(LinkDtoSchema)),

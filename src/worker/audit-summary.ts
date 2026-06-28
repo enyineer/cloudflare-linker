@@ -14,6 +14,8 @@ export function auditSummary(path: readonly string[], input: Record<string, unkn
       return `Set web address #${str(input.id)} to ${str(input.status)}`;
     case "domains.delete":
       return `Removed web address #${str(input.id)}`;
+    case "domains.clearClicks":
+      return `Cleared all click history for web address #${str(input.id)}`;
     case "links.create":
       return `Created link ${str(input.path)} -> ${str(input.targetUrl)}`;
     case "links.update":
