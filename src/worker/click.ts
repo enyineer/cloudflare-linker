@@ -9,13 +9,12 @@ import type { DeviceCategory, RedirectType } from "../shared/types.ts";
  * ORIGIN. No IP, no full UA, no cookies, no per-person identifier is ever stored.
  */
 
-/** Coarse device class. Intentionally lossy - cannot single out a person. */
+/** Coarse device FORM FACTOR. Intentionally lossy - cannot single out a person.
+ *  Bot classification is separate (see bot.ts); buildClickRecord sets the "bot"
+ *  category from the authoritative is_bot flag, so this only returns form factors. */
 export function deviceCategory(ua: string | null): DeviceCategory {
   if (!ua) return "unknown";
   const s = ua.toLowerCase();
-  if (/bot|crawler|spider|crawling|facebookexternalhit|slurp|bingpreview|headless|monitoring/.test(s)) {
-    return "bot";
-  }
   if (/ipad|tablet|playbook|silk|kindle|(android(?!.*mobi))/.test(s)) return "tablet";
   if (/mobi|iphone|ipod|android.*mobi|windows phone|blackberry|bb10|opera mini|iemobile/.test(s)) {
     return "mobile";
@@ -99,7 +98,8 @@ export function buildClickRecord(input: ClickInput): NewClick {
     path: input.path,
     country: input.country,
     region: input.region,
-    deviceCategory: deviceCategory(input.userAgent),
+    // is_bot is authoritative for the "bot" category; otherwise classify form factor.
+    deviceCategory: input.isBot ? "bot" : deviceCategory(input.userAgent),
     browserFamily: browserFamily(input.userAgent),
     refererOrigin: refererOrigin(input.referer),
     utmSource: input.utm.utmSource,

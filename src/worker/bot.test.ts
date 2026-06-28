@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { classifyBot, isScannerPath, type BotOptions } from "./bot.ts";
+import { classifyBot, isHostingAsn, isScannerPath, looksLikeBrowser, type BotOptions } from "./bot.ts";
 
-const OPTS: BotOptions = { botScoreThreshold: 30, flagDatacenterTraffic: false };
+const OPTS: BotOptions = { botScoreThreshold: 30, flagDatacenterTraffic: false, botManagementEnabled: false };
+const CHROME = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36";
 
 describe("isScannerPath", () => {
   test("flags dotfile probes", () => {
@@ -46,32 +47,54 @@ describe("classifyBot", () => {
   });
 
   test("a real browser UA is not a bot", () => {
-    const chrome = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36";
-    expect(classifyBot({ userAgent: chrome }, OPTS)).toBe(false);
+    expect(classifyBot({ userAgent: CHROME }, OPTS)).toBe(false);
+  });
+
+  test("real device names that merely contain 'bot' are not bots (e.g. Cubot)", () => {
+    expect(classifyBot({ userAgent: "Mozilla/5.0 (Linux; Android 12; CUBOT_X30) AppleWebKit/537.36 Chrome/120 Mobile" }, OPTS)).toBe(false);
   });
 
   test("scanner-path hits are bots even with a browser UA", () => {
-    const chrome = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36";
-    expect(classifyBot({ userAgent: chrome, scannerProbe: true }, OPTS)).toBe(true);
+    expect(classifyBot({ userAgent: CHROME, scannerProbe: true }, OPTS)).toBe(true);
   });
 
-  test("uses cf.botManagement as a positive signal when present", () => {
-    const chrome = "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/120 Safari/537.36";
-    expect(classifyBot({ userAgent: chrome, botManagement: { score: 5 } }, OPTS)).toBe(true);
-    expect(classifyBot({ userAgent: chrome, botManagement: { verifiedBot: true } }, OPTS)).toBe(true);
+  test("cf.botManagement is used only when Bot Management is enabled", () => {
+    // Off (free-plan default): a low/placeholder score is ignored entirely.
+    expect(classifyBot({ userAgent: CHROME, botManagement: { score: 5 } }, OPTS)).toBe(false);
+    expect(classifyBot({ userAgent: CHROME, botManagement: { score: 99 } }, OPTS)).toBe(false);
+    // On: low score or verifiedBot flags; a high (human) score does not.
+    const on: BotOptions = { ...OPTS, botManagementEnabled: true };
+    expect(classifyBot({ userAgent: CHROME, botManagement: { score: 5 } }, on)).toBe(true);
+    expect(classifyBot({ userAgent: CHROME, botManagement: { verifiedBot: true } }, on)).toBe(true);
+    expect(classifyBot({ userAgent: CHROME, botManagement: { score: 99 } }, on)).toBe(false);
   });
 
-  test("a placeholder high score does not suppress UA detection (free-plan safety)", () => {
-    // On free, botManagement may be a constant placeholder (score 99 = 'human').
-    const chrome = "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/120 Safari/537.36";
-    expect(classifyBot({ userAgent: chrome, botManagement: { score: 99 } }, OPTS)).toBe(false);
-    expect(classifyBot({ userAgent: "curl/8", botManagement: { score: 99 } }, OPTS)).toBe(true);
+  test("datacenter ASN flagging is opt-in and corroborated (clean browsers are spared)", () => {
+    const dc = 16509; // Amazon AWS - in the hosting list
+    const on: BotOptions = { ...OPTS, flagDatacenterTraffic: true };
+    // off by default -> not flagged
+    expect(classifyBot({ userAgent: CHROME, asn: dc, browserLike: true }, OPTS)).toBe(false);
+    // on, but a real browser (VPN/WARP/Private Relay human) -> NOT flagged
+    expect(classifyBot({ userAgent: CHROME, asn: dc, browserLike: true }, on)).toBe(false);
+    // on, non-browser request from a hosting ASN -> flagged
+    expect(classifyBot({ userAgent: CHROME, asn: dc, browserLike: false }, on)).toBe(true);
+    // on, but a residential/unknown ASN -> not flagged even without browserLike
+    expect(classifyBot({ userAgent: CHROME, asn: 64500, browserLike: false }, on)).toBe(false);
   });
+});
 
-  test("datacenter flagging is opt-in", () => {
-    const chrome = "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/120 Safari/537.36";
-    const aws = { userAgent: chrome, asOrganization: "Amazon.com, Inc." };
-    expect(classifyBot(aws, OPTS)).toBe(false);
-    expect(classifyBot(aws, { botScoreThreshold: 30, flagDatacenterTraffic: true })).toBe(true);
+describe("isHostingAsn", () => {
+  test("knows a hosting ASN and rejects a non-hosting one", () => {
+    expect(isHostingAsn(16509)).toBe(true); // Amazon AWS
+    expect(isHostingAsn(64500)).toBe(false); // private-use ASN, never in the list
+  });
+});
+
+describe("looksLikeBrowser", () => {
+  test("true only for a browser UA with an Accept-Language header", () => {
+    expect(looksLikeBrowser(CHROME, "en-US,en;q=0.9")).toBe(true);
+    expect(looksLikeBrowser(CHROME, null)).toBe(false); // no Accept-Language -> not corroborated
+    expect(looksLikeBrowser("curl/8.4.0", "en-US")).toBe(false);
+    expect(looksLikeBrowser(null, "en-US")).toBe(false);
   });
 });

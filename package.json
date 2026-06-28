@@ -18,7 +18,8 @@
     "db:migrate": "wrangler d1 migrations apply cloudflare-linker-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply cloudflare-linker-db --remote",
     "db:seed": "wrangler d1 execute cloudflare-linker-db --local --file=./src/db/seed.sql",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "gen:datacenter-asns": "bun run scripts/gen-datacenter-asns.ts"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.42.3",

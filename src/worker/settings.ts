@@ -15,8 +15,10 @@ export interface AppSettings {
   blockScannerPaths: boolean;
   /** Don't store bot clicks at all (vs. store-and-hide). */
   dropBotClicks: boolean;
-  /** Treat hosting/datacenter ASNs as bots (false-positive prone). */
+  /** Treat known hosting/datacenter ASNs as bots (false-positive prone; corroborated). */
   flagDatacenterTraffic: boolean;
+  /** Trust request.cf.botManagement (only set this if you have paid Bot Management). */
+  botManagementEnabled: boolean;
   /** Log catch-all hits to unconfigured (non-scanner) paths. */
   logUnmatchedPaths: boolean;
   /** Cloudflare bot score (1 bot .. 99 human) at/below which a click counts as a bot. */
@@ -30,6 +32,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   blockScannerPaths: true,
   dropBotClicks: false,
   flagDatacenterTraffic: false,
+  botManagementEnabled: false,
   logUnmatchedPaths: true,
   botScoreThreshold: 30,
   botRetentionDays: 90,
@@ -41,6 +44,7 @@ const KEYS: Record<keyof AppSettings, string> = {
   blockScannerPaths: "block_scanner_paths",
   dropBotClicks: "drop_bot_clicks",
   flagDatacenterTraffic: "flag_datacenter_traffic",
+  botManagementEnabled: "bot_management_enabled",
   logUnmatchedPaths: "log_unmatched_paths",
   botScoreThreshold: "bot_score_threshold",
   botRetentionDays: "bot_retention_days",
@@ -65,6 +69,7 @@ function parse(rows: { key: string; value: string }[]): AppSettings {
     blockScannerPaths: bool(KEYS.blockScannerPaths, DEFAULT_SETTINGS.blockScannerPaths),
     dropBotClicks: bool(KEYS.dropBotClicks, DEFAULT_SETTINGS.dropBotClicks),
     flagDatacenterTraffic: bool(KEYS.flagDatacenterTraffic, DEFAULT_SETTINGS.flagDatacenterTraffic),
+    botManagementEnabled: bool(KEYS.botManagementEnabled, DEFAULT_SETTINGS.botManagementEnabled),
     logUnmatchedPaths: bool(KEYS.logUnmatchedPaths, DEFAULT_SETTINGS.logUnmatchedPaths),
     botScoreThreshold: num(KEYS.botScoreThreshold, DEFAULT_SETTINGS.botScoreThreshold, 1, 99),
     botRetentionDays: num(KEYS.botRetentionDays, DEFAULT_SETTINGS.botRetentionDays, 1, 3650),

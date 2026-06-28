@@ -258,15 +258,23 @@ function AnalyticsFilteringCard() {
           <SettingRow
             id="set-flag-datacenter"
             label="Treat datacenter traffic as bots"
-            hint="Flag clicks from hosting providers (AWS, Hetzner, ...). Off by default - VPNs and corporate proxies can be misflagged."
+            hint="Flag clicks from known hosting networks (a maintained ASN list). Off by default; clean browser traffic via VPNs, Cloudflare WARP, or iCloud Private Relay is left alone, so this only catches non-browser datacenter requests."
             checked={s.flagDatacenterTraffic}
             disabled={busy}
             onChange={(v) => update.mutate({ flagDatacenterTraffic: v })}
           />
           <SettingRow
+            id="set-bot-management"
+            label="I have Cloudflare Bot Management"
+            hint="Use Cloudflare's bot score to detect bots. Leave OFF on the free plan - the score isn't available there and could misclassify real visitors."
+            checked={s.botManagementEnabled}
+            disabled={busy}
+            onChange={(v) => update.mutate({ botManagementEnabled: v })}
+          />
+          <SettingRow
             id="set-drop-bots"
             label="Don't store bot clicks at all"
-            hint="Stronger, but you lose bot visibility and can't recover a click that was wrongly flagged."
+            hint="Stronger, but risky: a click wrongly flagged as a bot is deleted on the spot and can never be recovered. Leave off unless storage is a concern."
             checked={s.dropBotClicks}
             disabled={busy}
             onChange={(v) => update.mutate({ dropBotClicks: v })}

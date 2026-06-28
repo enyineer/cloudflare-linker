@@ -15,7 +15,7 @@ import { RPCHandler } from "@orpc/server/fetch";
 import { normalizeHostname, normalizePath } from "../shared/format.ts";
 import { handleAuthRoutes } from "./api/auth-routes.ts";
 import { router } from "./api/router.ts";
-import { classifyBot, isScannerPath } from "./bot.ts";
+import { classifyBot, isScannerPath, looksLikeBrowser } from "./bot.ts";
 import { buildClickRecord, extractUtm } from "./click.ts";
 import { insertClick } from "./click-log.ts";
 import { buildTarget, paramsFromSearch } from "./redirect.ts";
@@ -91,14 +91,22 @@ async function handleRedirect(
             verifiedBot: "verifiedBot" in bm && typeof bm.verifiedBot === "boolean" ? bm.verifiedBot : undefined,
           }
         : null;
+    const userAgent = request.headers.get("user-agent");
     const isBot = classifyBot(
       {
-        userAgent: request.headers.get("user-agent"),
+        userAgent,
         botManagement,
-        asOrganization: typeof cf?.asOrganization === "string" ? cf.asOrganization : null,
-        scannerProbe,
+        asn: typeof cf?.asn === "number" ? cf.asn : null,
+        browserLike: looksLikeBrowser(userAgent, request.headers.get("accept-language")),
+        // Only treat a scanner-looking path as a bot signal when it fell through to
+        // the catch-all; a link the operator explicitly created is never flagged.
+        scannerProbe: scannerProbe && resolved.viaCatchAll,
       },
-      { botScoreThreshold: settings.botScoreThreshold, flagDatacenterTraffic: settings.flagDatacenterTraffic },
+      {
+        botScoreThreshold: settings.botScoreThreshold,
+        flagDatacenterTraffic: settings.flagDatacenterTraffic,
+        botManagementEnabled: settings.botManagementEnabled,
+      },
     );
     const record = buildClickRecord({
       linkId: resolved.linkId,
@@ -106,7 +114,7 @@ async function handleRedirect(
       hostname,
       path,
       redirectType: resolved.status,
-      userAgent: request.headers.get("user-agent"),
+      userAgent,
       referer: request.headers.get("referer"),
       country: typeof cf?.country === "string" ? cf.country : null,
       region: typeof cf?.region === "string" ? cf.region : null,

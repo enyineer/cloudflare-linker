@@ -11,7 +11,8 @@ const GOOGLEBOT = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.co
 
 describe("deviceCategory", () => {
   test("null UA is unknown", () => expect(deviceCategory(null)).toBe("unknown"));
-  test("bot", () => expect(deviceCategory(GOOGLEBOT)).toBe("bot"));
+  // deviceCategory is form-factor only now; bot is set from is_bot in buildClickRecord.
+  test("a bot UA is classified by form factor (desktop)", () => expect(deviceCategory(GOOGLEBOT)).toBe("desktop"));
   test("iPad is tablet", () => expect(deviceCategory(IPAD)).toBe("tablet"));
   test("iPhone is mobile", () => expect(deviceCategory(IPHONE)).toBe("mobile"));
   test("desktop Chrome is desktop", () => expect(deviceCategory(CHROME)).toBe("desktop"));
@@ -82,6 +83,24 @@ describe("buildClickRecord (GDPR guarantees)", () => {
       redirectType: 302,
       isBot: false,
     });
+  });
+
+  test("device category is 'bot' when is_bot is set, regardless of UA", () => {
+    const botRecord = buildClickRecord({
+      linkId: 1,
+      campaignId: null,
+      hostname: "go.example.com",
+      path: "/x",
+      redirectType: 301,
+      userAgent: CHROME, // a spoofed browser UA
+      referer: null,
+      country: null,
+      region: null,
+      utm: { utmSource: null, utmMedium: null, utmCampaign: null, utmTerm: null, utmContent: null },
+      isBot: true,
+    });
+    expect(botRecord.deviceCategory).toBe("bot");
+    expect(botRecord.isBot).toBe(true);
   });
 
   test("stores no IP, no full user-agent, no cookies", () => {
