@@ -113,39 +113,51 @@ describe("analyzeWebAddress", () => {
   const zone: CfZone = { id: "z1", name: "example.com", status: "active" };
   const w = "cloudflare-linker";
 
-  test("whole-host route + proxied -> routed", () => {
-    const routes = [{ pattern: "go.example.com/*", script: w }];
-    const r = analyzeWebAddress("go.example.com", "whole", zone, routes, true, w);
+  test("whole-host route + proxied -> routed (regardless of script name)", () => {
+    const routes = [{ pattern: "go.example.com/*", script: "some-other-worker-name" }];
+    const r = analyzeWebAddress("go.example.com", "whole", zone, routes, true);
     expect(r).toMatchObject({ zoneOnAccount: true, routed: true, proxied: true });
+  });
+
+  test("apex whole-host route -> routed", () => {
+    const apexZone: CfZone = { id: "z9", name: "hd-versicherung.de", status: "active" };
+    const routes = [{ pattern: "hd-versicherung.de/*", script: w }];
+    const r = analyzeWebAddress("hd-versicherung.de", "whole", apexZone, routes, true);
+    expect(r.routed).toBe(true);
   });
 
   test("zone wildcard covers a subdomain -> routed", () => {
     const routes = [{ pattern: "*.example.com/*", script: w }];
-    const r = analyzeWebAddress("go.example.com", "whole", zone, routes, true, w);
+    const r = analyzeWebAddress("go.example.com", "whole", zone, routes, true);
     expect(r.routed).toBe(true);
   });
 
   test("paths mode: a per-link route counts as routed (no proxied DNS expected)", () => {
     const routes = [{ pattern: "shop.example.com/promo", script: w }];
-    const r = analyzeWebAddress("shop.example.com", "paths", zone, routes, false, w);
+    const r = analyzeWebAddress("shop.example.com", "paths", zone, routes, false);
     expect(r.routed).toBe(true);
     expect(r.message).toContain("Routed");
   });
 
-  test("zone present but no route -> not routed", () => {
-    const r = analyzeWebAddress("go.example.com", "none", zone, [], false, w);
+  test("our routingMode is trusted even when the live route fetch is empty", () => {
+    const r = analyzeWebAddress("go.example.com", "whole", zone, [], true);
+    expect(r.routed).toBe(true);
+  });
+
+  test("zone present, never set up, no route -> not routed", () => {
+    const r = analyzeWebAddress("go.example.com", "none", zone, [], false);
     expect(r).toMatchObject({ zoneOnAccount: true, routed: false });
   });
 
   test("zone not on account", () => {
-    const r = analyzeWebAddress("go.other.com", "none", null, [], false, w);
+    const r = analyzeWebAddress("go.other.com", "none", null, [], false);
     expect(r.zoneOnAccount).toBe(false);
     expect(r.routed).toBe(false);
   });
 
   test("routed whole-host but missing proxied DNS -> flagged in message", () => {
     const routes = [{ pattern: "go.example.com/*", script: w }];
-    const r = analyzeWebAddress("go.example.com", "whole", zone, routes, false, w);
+    const r = analyzeWebAddress("go.example.com", "whole", zone, routes, false);
     expect(r.message).toContain("proxied DNS record is missing");
   });
 });

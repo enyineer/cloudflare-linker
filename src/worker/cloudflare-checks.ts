@@ -122,22 +122,25 @@ export function classifyHostname(
 }
 
 /** Status of one web address against the account: is its zone here, is it routed
- *  to this Worker (whole-host, zone wildcard, or per-link), and is it proxied. */
+ *  (whole-host, zone wildcard, or per-link route exists), and is it proxied.
+ *  We match on route PATTERN, not script name: a Worker can't read its own name,
+ *  so a name guess is unreliable. We also trust our own routingMode (set only when
+ *  setup succeeded), so a missed/failed route fetch can't produce a false "not routed". */
 export function analyzeWebAddress(
   hostname: string,
   routingMode: RoutingMode,
   zone: CfZone | null,
   routes: CfRoute[],
   proxied: boolean,
-  workerName: string,
 ): WebAddressResult {
   const zoneOnAccount = zone !== null;
-  let routed = false;
+  let liveRoute = false;
   if (zone) {
-    const state = classifyHostname(hostname, zone.name, routes, workerName);
-    const perLink = routes.some((r) => r.script === workerName && r.pattern.startsWith(`${hostname}/`));
-    routed = state !== "needs_setup" || perLink;
+    liveRoute =
+      routes.some((r) => r.pattern.startsWith(`${hostname}/`)) ||
+      (!isApexHost(hostname, zone.name) && findSubdomainRoute(routes, zone.name) !== undefined);
   }
+  const routed = zoneOnAccount && (liveRoute || routingMode !== "none");
 
   let message: string;
   if (!zoneOnAccount) {

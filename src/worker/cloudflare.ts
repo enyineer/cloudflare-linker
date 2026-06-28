@@ -189,7 +189,7 @@ export async function getDiagnostics(
       const zone = zoneForHostname(wa.hostname, zones);
       const routes = zone ? routesByZone.get(zone.id) ?? [] : [];
       const proxied = zone ? await isProxiedHost(token, zone.id, wa.hostname) : false;
-      return analyzeWebAddress(wa.hostname, wa.routingMode, zone, routes, proxied, workerName);
+      return analyzeWebAddress(wa.hostname, wa.routingMode, zone, routes, proxied);
     }),
   );
 
